@@ -10,3 +10,6 @@ export interface AppConfigResponse {
   model_provider: string;
 }
 
+export interface SessionResponse {
+  authenticated: boolean;
+}

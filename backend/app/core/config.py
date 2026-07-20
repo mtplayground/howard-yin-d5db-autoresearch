@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     database_url: SecretStr = Field(..., description="PostgreSQL connection string")
 
     access_passphrase: SecretStr | None = None
+    access_session_cookie_name: str = "single_account_session"
+    access_session_max_age_seconds: int = 60 * 60 * 24 * 7
     mctai_auth_url: str | None = None
     mctai_auth_app_token: SecretStr | None = None
     mctai_auth_jwks_url: str | None = None
@@ -49,4 +51,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

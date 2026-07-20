@@ -42,6 +42,16 @@ select {
   width: 100%;
 }
 
+.loginLayout {
+  align-items: center;
+  display: grid;
+  gap: 48px;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  margin: 0 auto;
+  max-width: 960px;
+  width: 100%;
+}
+
 .eyebrow {
   color: #476153;
   font-size: 0.84rem;
@@ -112,13 +122,69 @@ h1 {
   text-align: right;
 }
 
+.loginForm {
+  align-content: start;
+  min-height: 0;
+}
+
+.loginForm label {
+  color: #455056;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.loginForm input {
+  border: 1px solid #b9b1a3;
+  border-radius: 6px;
+  color: #172026;
+  min-height: 44px;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.loginForm input:focus {
+  border-color: #476153;
+  outline: 3px solid rgb(71 97 83 / 18%);
+}
+
+.loginForm button,
+.secondaryButton {
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 42px;
+  padding: 10px 14px;
+}
+
+.loginForm button {
+  background: #172026;
+  color: #ffffff;
+}
+
+.loginForm button:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.secondaryButton {
+  background: #e6efe8;
+  color: #26382e;
+}
+
+.formError {
+  color: #8b2424;
+  margin: 0;
+}
+
 @media (max-width: 760px) {
   .shell {
     align-items: flex-start;
     padding: 32px 20px;
   }
 
-  .intro {
+  .intro,
+  .loginLayout {
     gap: 28px;
     grid-template-columns: 1fr;
   }
@@ -127,4 +193,3 @@ h1 {
     width: 100%;
   }
 }
-
