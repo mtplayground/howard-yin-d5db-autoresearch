@@ -123,10 +123,30 @@ class Run(Base, TimestampMixin):
     experiments: Mapped[list[Experiment]] = relationship(back_populates="run")
     papers: Mapped[list[Paper]] = relationship(back_populates="run")
     artifacts: Mapped[list[Artifact]] = relationship(back_populates="run")
+    events: Mapped[list[RunEvent]] = relationship(back_populates="run", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_runs_status_created_at", "status", "created_at"),
         Index("ix_runs_idea_id", "idea_id"),
+    )
+
+
+class RunEvent(Base):
+    __tablename__ = "run_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(80), nullable=False)
+    stage: Mapped[str | None] = mapped_column(String(120))
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    run: Mapped[Run] = relationship(back_populates="events")
+
+    __table_args__ = (
+        Index("ix_run_events_run_id_created_at", "run_id", "created_at"),
+        Index("ix_run_events_event_type_created_at", "event_type", "created_at"),
     )
 
 
