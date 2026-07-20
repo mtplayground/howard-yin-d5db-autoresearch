@@ -14,3 +14,11 @@ python -m app.main
 
 The service listens on `0.0.0.0:8080` by default and exposes `/api/health`.
 
+## Migrations
+
+```bash
+export DATABASE_URL=postgresql://user:password@localhost:5432/autoresearch
+alembic upgrade head
+```
+
+The migration stack targets PostgreSQL only.
