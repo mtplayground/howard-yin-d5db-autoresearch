@@ -7,12 +7,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.auth import router as auth_router
+from app.api.discovery import router as discovery_router
 from app.api.events import router as events_router
 from app.api.routes import router as api_router
 from app.api.runs import router as runs_router
 from app.api.settings import router as settings_router
 from app.core.auth import SingleAccountAuthMiddleware
 from app.core.config import get_settings
+from app.services.discovery import configure_discovery_scheduler
 
 
 def create_app() -> FastAPI:
@@ -38,6 +40,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SingleAccountAuthMiddleware, settings=settings)
 
     app.include_router(auth_router)
+    app.include_router(discovery_router)
     app.include_router(events_router)
     app.include_router(runs_router)
     app.include_router(settings_router)
@@ -54,6 +57,7 @@ def create_app() -> FastAPI:
                 return FileResponse(requested_path)
             return FileResponse(static_dir / "index.html")
 
+    configure_discovery_scheduler(app, settings)
     return app
 
 

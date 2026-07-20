@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     openalex_email: str | None = None
     github_token: SecretStr | None = None
 
+    discovery_default_query: str = "machine learning"
+    discovery_default_limit: int = 10
+    discovery_interval_seconds: int = 0
+
 
 @lru_cache
 def get_settings() -> Settings:
