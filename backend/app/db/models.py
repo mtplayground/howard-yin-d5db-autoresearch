@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Numeric, SmallInteger, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -68,6 +68,18 @@ class ArtifactKind(str, enum.Enum):
     LATEX = "latex"
     PDF = "pdf"
     OTHER = "other"
+
+
+class ModelSettings(Base, TimestampMixin):
+    __tablename__ = "model_settings"
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, default=1)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    base_url: Mapped[str | None] = mapped_column(String(512))
+    default_model: Mapped[str] = mapped_column(String(160), nullable=False)
+    encrypted_api_key: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (CheckConstraint("id = 1", name="ck_model_settings_singleton"),)
 
 
 class Idea(Base, TimestampMixin):

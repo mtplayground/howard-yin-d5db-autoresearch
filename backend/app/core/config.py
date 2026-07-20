@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     model_base_url: str | None = None
     model_api_key: SecretStr | None = None
     model_default_model: str = "gpt-4.1-mini"
+    model_request_timeout_seconds: float = 60.0
 
     object_storage_endpoint: str | None = None
     object_storage_region: str = "auto"

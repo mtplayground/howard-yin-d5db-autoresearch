@@ -89,6 +89,11 @@ h1 {
   padding: 24px;
 }
 
+.consolePanels {
+  display: grid;
+  gap: 18px;
+}
+
 .panelError {
   border-color: #b85555;
   color: #7a2222;
@@ -122,18 +127,21 @@ h1 {
   text-align: right;
 }
 
-.loginForm {
+.loginForm,
+.settingsForm {
   align-content: start;
   min-height: 0;
 }
 
-.loginForm label {
+.loginForm label,
+.settingsForm label {
   color: #455056;
   font-size: 0.9rem;
   font-weight: 700;
 }
 
-.loginForm input {
+.loginForm input,
+.settingsForm input {
   border: 1px solid #b9b1a3;
   border-radius: 6px;
   color: #172026;
@@ -142,12 +150,14 @@ h1 {
   width: 100%;
 }
 
-.loginForm input:focus {
+.loginForm input:focus,
+.settingsForm input:focus {
   border-color: #476153;
   outline: 3px solid rgb(71 97 83 / 18%);
 }
 
 .loginForm button,
+.settingsForm button,
 .secondaryButton {
   border: 0;
   border-radius: 6px;
@@ -162,7 +172,13 @@ h1 {
   color: #ffffff;
 }
 
-.loginForm button:disabled {
+.settingsForm button {
+  background: #26382e;
+  color: #ffffff;
+}
+
+.loginForm button:disabled,
+.settingsForm button:disabled {
   cursor: not-allowed;
   opacity: 0.68;
 }
@@ -175,6 +191,34 @@ h1 {
 .formError {
   color: #8b2424;
   margin: 0;
+}
+
+.formHint {
+  color: #476153;
+  margin: 0;
+}
+
+.settingsHeader {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.settingsHeader span {
+  color: #617078;
+  font-size: 0.86rem;
+}
+
+.checkboxRow {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.checkboxRow input {
+  min-height: auto;
+  width: auto;
 }
 
 @media (max-width: 760px) {

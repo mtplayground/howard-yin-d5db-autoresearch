@@ -7,3 +7,4 @@ alembic==1.14.0
 boto3==1.35.90
 itsdangerous==2.2.0
 httpx==0.28.1
+cryptography==44.0.0
