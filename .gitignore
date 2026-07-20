@@ -1,5 +1,11 @@
 target/
 node_modules/
+__pycache__/
+*.py[cod]
+*.tsbuildinfo
+.venv/
+backend/static/
+.env.production
 .gh_token
 .database_url
 .task_id
