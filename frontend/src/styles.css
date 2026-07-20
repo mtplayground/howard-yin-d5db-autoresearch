@@ -221,6 +221,54 @@ h1 {
   width: auto;
 }
 
+.progressPanel {
+  min-height: 150px;
+}
+
+.emptyState {
+  color: #617078;
+  margin: 0;
+}
+
+.eventList {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 0;
+}
+
+.eventList li {
+  border-bottom: 1px solid #ece7df;
+  display: grid;
+  gap: 4px;
+  padding-bottom: 12px;
+}
+
+.eventList li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.eventList span {
+  color: #617078;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.eventList strong {
+  color: #172026;
+  overflow-wrap: anywhere;
+}
+
+.eventList p {
+  color: #455056;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 760px) {
   .shell {
     align-items: flex-start;

@@ -28,3 +28,16 @@ export interface ModelSettingsUpdate {
   api_key?: string;
   clear_api_key?: boolean;
 }
+
+export type ProgressEventType = 'connected' | 'progress' | 'log' | 'artifact' | 'heartbeat';
+
+export interface ProgressEvent {
+  id: string;
+  type: ProgressEventType;
+  message: string;
+  run_id: string | null;
+  stage: string | null;
+  artifact_id: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+}

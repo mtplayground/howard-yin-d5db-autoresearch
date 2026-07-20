@@ -10,6 +10,7 @@ import {
   logout,
   updateModelSettings,
 } from './api/client';
+import { useProgressEvents } from './hooks/useProgressEvents';
 import type { AppConfigResponse, HealthResponse, ModelSettingsResponse } from './types/api';
 
 type LoadState =
@@ -22,6 +23,7 @@ export function App() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [passphrase, setPassphrase] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const progressEvents = useProgressEvents(state.status === 'ready');
 
   useEffect(() => {
     let active = true;
@@ -146,12 +148,37 @@ export function App() {
         </div>
         <div className="consolePanels">
           <StatusPanel state={state} onLogout={handleLogout} />
+          <ProgressPanel status={progressEvents.status} events={progressEvents.events} />
           {state.status === 'ready' ? (
             <ModelSettingsPanel settings={state.modelSettings} onSaved={handleModelSettingsSaved} />
           ) : null}
         </div>
       </section>
     </main>
+  );
+}
+
+function ProgressPanel({ status, events }: ReturnType<typeof useProgressEvents>) {
+  return (
+    <div className="panel progressPanel">
+      <div className="settingsHeader">
+        <strong>实时进度</strong>
+        <span>{status === 'open' ? '已连接' : status === 'connecting' ? '连接中' : status === 'error' ? '连接异常' : '未连接'}</span>
+      </div>
+      {events.length === 0 ? (
+        <p className="emptyState">等待流水线进度、日志与产物更新。</p>
+      ) : (
+        <ol className="eventList">
+          {events.map((event) => (
+            <li key={event.id}>
+              <span>{event.type}</span>
+              <strong>{event.stage ?? event.run_id ?? '全局'}</strong>
+              <p>{event.message}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
   );
 }
 
