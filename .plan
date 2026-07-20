@@ -1,0 +1,46 @@
+# Architecture Plan
+
+## Repository Shape
+
+- `backend/`: Python API service exposing REST endpoints plus SSE streams.
+  - `app/main.py`: application factory, middleware, router registration.
+  - `app/api/`: HTTP routes for ideas, experiments, papers, settings, and progress streams.
+  - `app/core/`: configuration, auth guard, logging, errors, retry policy.
+  - `app/db/`: SQLAlchemy models, migrations, repositories, session management.
+  - `app/models/`: Pydantic request/response DTOs shared by API and workers.
+  - `app/services/`: object storage, model provider adapter, data source connectors, citation handling.
+  - `app/pipeline/`: orchestration state machine, jobs, events, transitions, resumability.
+  - `app/agents/`: summarize, idea generation, experiment code generation, LaTeX generation, self-review.
+  - `app/sandbox/`: isolated execution, dependency install, log/result capture.
+  - `tests/`: unit, integration, and end-to-end pipeline tests.
+- `frontend/`: React application.
+  - `src/api/`: typed API client and SSE subscription helpers.
+  - `src/types/`: generated or hand-maintained shared DTOs aligned with backend Pydantic models.
+  - `src/routes/`: idea list, idea detail, experiment monitor, paper viewer, settings.
+  - `src/components/`: reusable controls, tables, log viewers, artifact download widgets.
+  - `src/state/`: query cache, filters, live progress state.
+- `deploy/`: Docker, compose, reverse-proxy-aware environment examples, storage/database bootstrap.
+- `docs/`: operational notes and issue-level design records when needed.
+
+## Issue Dependencies
+
+- Foundation: #1 initializes Python backend and React frontend skeletons.
+- Data layer: #2 defines core schema before #6, #7, #9, #11, #13, #14, #19, #20, and #26 depend on persisted state.
+- Infrastructure services: #3 object storage, #4 single-account access, and #5 BYO-key model adapter are cross-cutting prerequisites for later agents and artifacts.
+- Realtime and orchestration: #6 SSE and #7 state machine support progress visibility, retries, and long-running jobs used by #10 through #25.
+- Discovery pipeline: #8 connectors feed #9 normalization and knowledge storage; #10 extracts summaries; #11 schedules or triggers discovery.
+- Idea workflow: #12 generates ideas; #13 lists and filters them; #14 supports detail discussion and refinement; #15 gates execution through explicit confirmation.
+- Experiment workflow: #16 sandbox orchestration enables #17 code generation and #18 dependency/install/run/log capture; #19 persists results and artifacts; #20 exposes realtime monitoring.
+- Paper workflow: #21 creates LaTeX, #22 embeds generated charts, #23 manages references, #24 compiles and stores PDFs, #25 adds self-review and revision loops, #26 exposes viewing and download.
+- Hardening and release: #27 validates the end-to-end flow, #28 reviews failure handling and retry coverage, and #29 prepares self-hosted deployment.
+
+## Key Design Decisions
+
+- Use PostgreSQL-compatible relational models for durable entities and pipeline state; keep large files, logs, generated code, charts, and PDFs in object storage.
+- Treat the pipeline as an explicit persisted state machine with append-only events so jobs can resume, retry, and stream progress consistently.
+- Keep all model calls behind a provider-neutral BYO-key adapter so agents do not depend on a specific vendor SDK.
+- Emit typed progress events through SSE from backend state changes rather than from frontend polling.
+- Keep sandbox execution separate from API request handling; the API enqueues work and streams state while workers perform long-running tasks.
+- Normalize external source data into stable internal records before summarization or idea generation to keep later agents deterministic and testable.
+- Require an explicit confirmation transition before any experiment execution.
+- Derive public origin from proxy headers or configured allowed origin during deployment-sensitive backend work.
