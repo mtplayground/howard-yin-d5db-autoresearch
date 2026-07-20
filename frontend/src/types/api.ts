@@ -13,3 +13,18 @@ export interface AppConfigResponse {
 export interface SessionResponse {
   authenticated: boolean;
 }
+
+export interface ModelSettingsResponse {
+  provider: string;
+  base_url: string | null;
+  default_model: string;
+  api_key_configured: boolean;
+}
+
+export interface ModelSettingsUpdate {
+  provider?: string;
+  base_url?: string | null;
+  default_model?: string;
+  api_key?: string;
+  clear_api_key?: boolean;
+}

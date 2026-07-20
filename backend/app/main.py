@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.auth import router as auth_router
 from app.api.routes import router as api_router
+from app.api.settings import router as settings_router
 from app.core.auth import SingleAccountAuthMiddleware
 from app.core.config import get_settings
 
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SingleAccountAuthMiddleware, settings=settings)
 
     app.include_router(auth_router)
+    app.include_router(settings_router)
     app.include_router(api_router)
 
     static_dir = Path(__file__).resolve().parents[2] / "static"
