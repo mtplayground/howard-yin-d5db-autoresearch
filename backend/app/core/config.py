@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     object_storage_prefix: str = ""
 
     arxiv_api_url: str = "https://export.arxiv.org/api/query"
+    semantic_scholar_api_url: str = "https://api.semanticscholar.org/graph/v1"
+    github_api_url: str = "https://api.github.com"
+    papers_with_code_api_url: str = "https://paperswithcode.com/api/v1"
+    source_connectors_enabled: str = "arxiv,semantic_scholar,github,papers_with_code"
+    source_request_timeout_seconds: float = 30.0
+    source_min_interval_seconds: float = 1.0
+    source_user_agent: str = "autoresearch/0.1"
     semantic_scholar_api_key: SecretStr | None = None
     openalex_email: str | None = None
     github_token: SecretStr | None = None
