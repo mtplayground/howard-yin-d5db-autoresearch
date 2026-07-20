@@ -82,6 +82,32 @@ class ModelSettings(Base, TimestampMixin):
     __table_args__ = (CheckConstraint("id = 1", name="ck_model_settings_singleton"),)
 
 
+class KnowledgeItem(Base, TimestampMixin):
+    __tablename__ = "knowledge_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    canonical_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    abstract: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    code_repository_url: Mapped[str | None] = mapped_column(Text)
+    authors: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("canonical_key", name="uq_knowledge_items_canonical_key"),
+        UniqueConstraint("source", "source_id", name="uq_knowledge_items_source_source_id"),
+        Index("ix_knowledge_items_source_created_at", "source", "created_at"),
+        Index("ix_knowledge_items_published_at", "published_at"),
+    )
+
+
 class Idea(Base, TimestampMixin):
     __tablename__ = "ideas"
 
