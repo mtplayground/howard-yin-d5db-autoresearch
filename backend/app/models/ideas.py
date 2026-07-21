@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.runs import RunResponse
+
 IdeaSort = Literal["created_desc", "created_asc", "score_desc", "score_asc", "title_asc"]
 
 
@@ -40,3 +42,8 @@ class IdeaRefineRequest(BaseModel):
 class IdeaRefineResponse(BaseModel):
     idea: IdeaResponse
     assistant_message: str
+
+
+class IdeaConfirmResponse(BaseModel):
+    idea: IdeaResponse
+    run: RunResponse

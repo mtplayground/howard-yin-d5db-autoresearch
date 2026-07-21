@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import {
   ApiError,
+  confirmIdea,
   getAppConfig,
   getHealth,
   getIdea,
@@ -14,7 +15,7 @@ import {
   updateModelSettings,
 } from './api/client';
 import { useProgressEvents } from './hooks/useProgressEvents';
-import type { AppConfigResponse, HealthResponse, IdeaListResponse, IdeaResponse, IdeaSort, ModelSettingsResponse } from './types/api';
+import type { AppConfigResponse, HealthResponse, IdeaListResponse, IdeaResponse, IdeaSort, ModelSettingsResponse, RunResponse } from './types/api';
 
 type LoadState =
   | { status: 'loading' }
@@ -368,7 +369,7 @@ function IdeaList({
 type IdeaDetailState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'ready'; idea: IdeaResponse; assistantMessage?: string }
+  | { status: 'ready'; idea: IdeaResponse; assistantMessage?: string; run?: RunResponse }
   | { status: 'error'; message: string };
 
 function IdeaDetailPanel({
@@ -383,6 +384,7 @@ function IdeaDetailPanel({
   const [detailState, setDetailState] = useState<IdeaDetailState>({ status: 'idle' });
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (!enabled || !ideaId) {
@@ -425,6 +427,27 @@ function IdeaDetailPanel({
     }
   }
 
+  async function handleConfirm() {
+    if (!ideaId) {
+      return;
+    }
+    setConfirming(true);
+    try {
+      const response = await confirmIdea(ideaId);
+      setDetailState({
+        status: 'ready',
+        idea: response.idea,
+        assistantMessage: '已确认并触发自动实验运行。',
+        run: response.run,
+      });
+      onRefined();
+    } catch (error) {
+      setDetailState({ status: 'error', message: error instanceof Error ? error.message : '确认失败' });
+    } finally {
+      setConfirming(false);
+    }
+  }
+
   return (
     <section className="panel ideaDetailPanel">
       <div className="settingsHeader">
@@ -433,20 +456,28 @@ function IdeaDetailPanel({
       </div>
       <IdeaDetailBody detailState={detailState} />
       {detailState.status === 'ready' ? (
-        <form className="refineForm" onSubmit={handleRefine}>
-          <label htmlFor="idea-refine-message">交流/微调</label>
-          <textarea
-            id="idea-refine-message"
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            maxLength={4000}
-            placeholder="例如：收窄实验范围，强调可验证指标"
-            required
-          />
-          <button type="submit" disabled={submitting}>
-            {submitting ? '正在细化...' : '提交细化'}
-          </button>
-        </form>
+        <>
+          <div className="confirmGateway">
+            <button type="button" onClick={handleConfirm} disabled={confirming || detailState.idea.status === 'approved'}>
+              {confirming ? '正在触发...' : detailState.idea.status === 'approved' ? '已确认' : '确认并执行'}
+            </button>
+            {detailState.run ? <span>运行 {detailState.run.status}</span> : null}
+          </div>
+          <form className="refineForm" onSubmit={handleRefine}>
+            <label htmlFor="idea-refine-message">交流/微调</label>
+            <textarea
+              id="idea-refine-message"
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              maxLength={4000}
+              placeholder="例如：收窄实验范围，强调可验证指标"
+              required
+            />
+            <button type="submit" disabled={submitting}>
+              {submitting ? '正在细化...' : '提交细化'}
+            </button>
+          </form>
+        </>
       ) : null}
     </section>
   );

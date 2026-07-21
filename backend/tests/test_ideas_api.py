@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
 from app.core.config import get_settings
-from app.db.models import Idea, IdeaStatus
+from app.db.models import Idea, IdeaStatus, Run, RunEvent, RunStatus
 from app.db.session import SessionLocal
 from app.main import create_app
 
@@ -17,11 +17,15 @@ class IdeasApiTest(unittest.TestCase):
         get_settings.cache_clear()
         self.db = SessionLocal()
         self.idea_ids: list[object] = []
+        self.run_ids: list[object] = []
         self.client = TestClient(create_app())
         self.client.post("/api/auth/login", json={"passphrase": "correct-passphrase"})
 
     def tearDown(self) -> None:
         self.db.rollback()
+        if self.run_ids:
+            self.db.execute(delete(RunEvent).where(RunEvent.run_id.in_(self.run_ids)))
+            self.db.execute(delete(Run).where(Run.id.in_(self.run_ids)))
         if self.idea_ids:
             self.db.execute(delete(Idea).where(Idea.id.in_(self.idea_ids)))
         self.db.commit()
@@ -133,6 +137,37 @@ class IdeasApiTest(unittest.TestCase):
         self.assertEqual(body["assistant_message"], "Refinement applied")
         self.assertEqual(body["idea"]["title"], "Refined API idea")
         self.assertEqual(body["idea"]["rationale"], "Refined from: Tighten feasibility")
+
+    def test_confirm_idea_approves_and_starts_experiment_run(self) -> None:
+        idea = Idea(
+            title="Confirmable idea",
+            problem_statement="Confirm problem.",
+            hypothesis="Confirm hypothesis.",
+            status=IdeaStatus.CANDIDATE.value,
+            score=0.9,
+            rationale="Confirm motivation.",
+            source_context={},
+            extra={},
+        )
+        self.db.add(idea)
+        self.db.commit()
+        self.db.refresh(idea)
+        self.idea_ids.append(idea.id)
+
+        response = self.client.post(f"/api/ideas/{idea.id}/confirm")
+
+        self.assertEqual(response.status_code, 201)
+        body = response.json()
+        self.run_ids.append(body["run"]["id"])
+        self.assertEqual(body["idea"]["status"], IdeaStatus.APPROVED.value)
+        self.assertEqual(body["run"]["idea_id"], str(idea.id))
+        self.assertEqual(body["run"]["trigger_source"], "idea_confirmation")
+        self.assertEqual(body["run"]["status"], RunStatus.SUCCEEDED.value)
+        self.assertEqual(body["run"]["parameters"]["entry_stage"], "experiment")
+
+        events = self.db.query(RunEvent).filter(RunEvent.run_id == body["run"]["id"]).order_by(RunEvent.created_at.asc()).all()
+        stage_started = [event.stage for event in events if event.event_type == "stage_started"]
+        self.assertEqual(stage_started, ["experiment", "writing", "revision"])
 
 
 if __name__ == "__main__":

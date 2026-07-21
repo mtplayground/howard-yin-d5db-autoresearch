@@ -30,12 +30,16 @@ class PipelineOrchestrator:
         trigger_source: str,
         idea_id: uuid.UUID | None = None,
         parameters: dict[str, Any] | None = None,
+        start_stage: str | None = None,
     ) -> Run:
+        current_stage = start_stage or self._stages[0].name
+        if current_stage not in self._stage_names:
+            raise PipelineExecutionError(f"Unknown pipeline start stage {current_stage}")
         run = Run(
             idea_id=idea_id,
             status=RunStatus.QUEUED.value,
             trigger_source=trigger_source,
-            current_stage=self._stages[0].name,
+            current_stage=current_stage,
             parameters=parameters or {},
         )
         self._db.add(run)
@@ -45,7 +49,7 @@ class PipelineOrchestrator:
             event_type="run_created",
             stage=run.current_stage,
             message="Pipeline run created",
-            payload={"trigger_source": trigger_source},
+            payload={"trigger_source": trigger_source, "start_stage": current_stage},
         )
         return run
 

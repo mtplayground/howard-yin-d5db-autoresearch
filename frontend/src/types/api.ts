@@ -86,6 +86,25 @@ export interface IdeaRefineResponse {
   assistant_message: string;
 }
 
+export interface RunResponse {
+  id: string;
+  idea_id: string | null;
+  status: string;
+  trigger_source: string;
+  current_stage: string | null;
+  parameters: Record<string, unknown>;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IdeaConfirmResponse {
+  idea: IdeaResponse;
+  run: RunResponse;
+}
+
 export type ProgressEventType = 'connected' | 'progress' | 'log' | 'artifact' | 'heartbeat';
 
 export interface ProgressEvent {

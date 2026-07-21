@@ -82,6 +82,29 @@ class PipelineOrchestratorTest(unittest.TestCase):
 
         asyncio.run(scenario())
 
+    def test_create_run_can_start_from_named_stage(self) -> None:
+        async def scenario() -> None:
+            calls: list[str] = []
+            orchestrator = PipelineOrchestrator(
+                self.db,
+                stages=(
+                    RecordingStage("discovery", calls),
+                    RecordingStage("experiment", calls),
+                    RecordingStage("writing", calls),
+                ),
+            )
+            run = await orchestrator.create_run(trigger_source="confirm", parameters={}, start_stage="experiment")
+            self.run_ids.append(run.id)
+
+            completed = await orchestrator.run_to_completion(run.id)
+
+            self.assertEqual(completed.status, RunStatus.SUCCEEDED.value)
+            self.assertEqual(calls, ["experiment", "writing"])
+            events = self.db.query(RunEvent).filter(RunEvent.run_id == run.id).order_by(RunEvent.created_at.asc()).all()
+            self.assertEqual(events[0].payload["start_stage"], "experiment")
+
+        asyncio.run(scenario())
+
     def test_unknown_resume_stage_marks_run_failed(self) -> None:
         async def scenario() -> None:
             run = Run(
