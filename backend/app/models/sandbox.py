@@ -16,6 +16,7 @@ class SandboxSubmitRequest(BaseModel):
     run_id: uuid.UUID | None = None
     experiment_id: uuid.UUID | None = None
     environment: dict[str, str] = Field(default_factory=dict)
+    capture_globs: list[str] = Field(default_factory=list, max_length=32)
     execute_immediately: bool = True
 
     @field_validator("command")
@@ -30,6 +31,14 @@ class SandboxSubmitRequest(BaseModel):
     @classmethod
     def environment_values_must_be_text(cls, value: dict[str, str]) -> dict[str, str]:
         return {str(key): str(env_value) for key, env_value in value.items()}
+
+    @field_validator("capture_globs")
+    @classmethod
+    def capture_globs_must_be_relative(cls, value: list[str]) -> list[str]:
+        normalized = [" ".join(pattern.split()) for pattern in value]
+        if any(not pattern or pattern.startswith("/") or ".." in pattern.split("/") for pattern in normalized):
+            raise ValueError("capture_globs must contain relative glob patterns")
+        return normalized
 
 
 class SandboxJobResponse(BaseModel):
