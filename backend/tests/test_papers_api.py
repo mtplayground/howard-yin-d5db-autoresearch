@@ -94,6 +94,56 @@ class PapersApiTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_compile_paper_returns_pdf_artifact(self) -> None:
+        async def fake_compile(db, paper_id):  # type: ignore[no-untyped-def]
+            paper = db.get(Paper, paper_id)
+            paper.status = "compiled"
+            paper.pdf_storage_key = "workspace/artifacts/papers/main.pdf"
+            artifact = Artifact(
+                run_id=paper.run_id,
+                idea_id=paper.idea_id,
+                experiment_id=paper.experiment_id,
+                paper_id=paper.id,
+                kind=ArtifactKind.PDF.value,
+                storage_key="workspace/artifacts/papers/main.pdf",
+                filename="main.pdf",
+                content_type="application/pdf",
+                byte_size=32,
+                checksum_sha256="pdf",
+                extra={},
+            )
+            db.add(artifact)
+            db.commit()
+            db.refresh(paper)
+            self.artifact_ids.append(artifact.id)
+            return paper
+
+        run = self._create_run()
+        paper = Paper(
+            run_id=run.id,
+            idea_id=run.idea_id,
+            experiment_id=self.experiment_ids[0],
+            title="Compile API paper",
+            abstract="Abstract.",
+            status="draft",
+            latex_storage_key="workspace/artifacts/papers/main.tex",
+            bibliography={},
+            review_notes={},
+        )
+        self.db.add(paper)
+        self.db.commit()
+        self.db.refresh(paper)
+        self.paper_ids.append(paper.id)
+
+        with patch("app.api.papers.compile_paper_to_pdf", fake_compile):
+            response = self.client.post(f"/api/papers/{paper.id}/compile")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["paper"]["status"], "compiled")
+        self.assertEqual(body["paper"]["pdf_storage_key"], "workspace/artifacts/papers/main.pdf")
+        self.assertEqual(body["artifacts"][0]["kind"], ArtifactKind.PDF.value)
+
     def _create_run(self) -> Run:
         idea = Idea(
             title="Paper API idea",
