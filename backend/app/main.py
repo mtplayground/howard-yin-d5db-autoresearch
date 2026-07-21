@@ -12,6 +12,7 @@ from app.api.events import router as events_router
 from app.api.ideas import router as ideas_router
 from app.api.routes import router as api_router
 from app.api.runs import router as runs_router
+from app.api.sandbox import router as sandbox_router
 from app.api.settings import router as settings_router
 from app.core.auth import SingleAccountAuthMiddleware
 from app.core.config import get_settings
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(events_router)
     app.include_router(ideas_router)
     app.include_router(runs_router)
+    app.include_router(sandbox_router)
     app.include_router(settings_router)
     app.include_router(api_router)
 
