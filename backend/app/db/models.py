@@ -70,6 +70,15 @@ class ArtifactKind(str, enum.Enum):
     OTHER = "other"
 
 
+class SandboxJobStatus(str, enum.Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+    CANCELED = "canceled"
+
+
 class ModelSettings(Base, TimestampMixin):
     __tablename__ = "model_settings"
 
@@ -179,6 +188,32 @@ class RunEvent(Base):
     __table_args__ = (
         Index("ix_run_events_run_id_created_at", "run_id", "created_at"),
         Index("ix_run_events_event_type_created_at", "event_type", "created_at"),
+    )
+
+
+class SandboxJob(Base, TimestampMixin):
+    __tablename__ = "sandbox_jobs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"))
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("experiments.id", ondelete="SET NULL"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default=SandboxJobStatus.QUEUED.value)
+    command: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    stdin: Mapped[str | None] = mapped_column(Text)
+    stdout: Mapped[str | None] = mapped_column(Text)
+    stderr: Mapped[str | None] = mapped_column(Text)
+    exit_code: Mapped[int | None] = mapped_column(SmallInteger)
+    timeout_seconds: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    cpu_time_seconds: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    extra: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+
+    __table_args__ = (
+        Index("ix_sandbox_jobs_status_created_at", "status", "created_at"),
+        Index("ix_sandbox_jobs_run_id", "run_id"),
+        Index("ix_sandbox_jobs_experiment_id", "experiment_id"),
     )
 
 
