@@ -4,15 +4,17 @@ import {
   ApiError,
   getAppConfig,
   getHealth,
+  getIdea,
   getIdeas,
   getModelSettings,
   getSession,
   login,
   logout,
+  refineIdea,
   updateModelSettings,
 } from './api/client';
 import { useProgressEvents } from './hooks/useProgressEvents';
-import type { AppConfigResponse, HealthResponse, IdeaListResponse, IdeaSort, ModelSettingsResponse } from './types/api';
+import type { AppConfigResponse, HealthResponse, IdeaListResponse, IdeaResponse, IdeaSort, ModelSettingsResponse } from './types/api';
 
 type LoadState =
   | { status: 'loading' }
@@ -24,6 +26,8 @@ export function App() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [passphrase, setPassphrase] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
+  const [ideaRefreshKey, setIdeaRefreshKey] = useState(0);
   const progressEvents = useProgressEvents(state.status === 'ready');
 
   useEffect(() => {
@@ -147,7 +151,19 @@ export function App() {
           <h1>研究自动化工作台</h1>
         </header>
         <div className="workbenchGrid">
-          <IdeasPanel enabled={state.status === 'ready'} />
+          <div className="ideaWorkspace">
+            <IdeasPanel
+              enabled={state.status === 'ready'}
+              selectedIdeaId={selectedIdeaId}
+              refreshKey={ideaRefreshKey}
+              onSelectIdea={setSelectedIdeaId}
+            />
+            <IdeaDetailPanel
+              enabled={state.status === 'ready'}
+              ideaId={selectedIdeaId}
+              onRefined={() => setIdeaRefreshKey((value) => value + 1)}
+            />
+          </div>
           <div className="consolePanels">
             <StatusPanel state={state} onLogout={handleLogout} />
             <ProgressPanel status={progressEvents.status} events={progressEvents.events} />
@@ -181,7 +197,17 @@ const defaultIdeaFilters: IdeaFilters = {
   sort: 'score_desc',
 };
 
-function IdeasPanel({ enabled }: { enabled: boolean }) {
+function IdeasPanel({
+  enabled,
+  selectedIdeaId,
+  refreshKey,
+  onSelectIdea,
+}: {
+  enabled: boolean;
+  selectedIdeaId: string | null;
+  refreshKey: number;
+  onSelectIdea: (ideaId: string) => void;
+}) {
   const [draftFilters, setDraftFilters] = useState<IdeaFilters>(defaultIdeaFilters);
   const [filters, setFilters] = useState<IdeaFilters>(defaultIdeaFilters);
   const [ideasState, setIdeasState] = useState<IdeaLoadState>({ status: 'idle' });
@@ -212,7 +238,7 @@ function IdeasPanel({ enabled }: { enabled: boolean }) {
     return () => {
       active = false;
     };
-  }, [enabled, filters]);
+  }, [enabled, filters, refreshKey]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -279,15 +305,19 @@ function IdeasPanel({ enabled }: { enabled: boolean }) {
         </label>
         <button type="submit">筛选</button>
       </form>
-      <IdeaList ideasState={ideasState} />
+      <IdeaList ideasState={ideasState} selectedIdeaId={selectedIdeaId} onSelectIdea={onSelectIdea} />
     </section>
   );
 }
 
 function IdeaList({
   ideasState,
+  selectedIdeaId,
+  onSelectIdea,
 }: {
   ideasState: IdeaLoadState;
+  selectedIdeaId: string | null;
+  onSelectIdea: (ideaId: string) => void;
 }) {
   if (ideasState.status === 'idle' || ideasState.status === 'loading') {
     return <p className="emptyState">正在加载候选 idea。</p>;
@@ -322,9 +352,152 @@ function IdeaList({
               ))}
             </div>
           ) : null}
+          <button
+            className={selectedIdeaId === idea.id ? 'activeIdeaButton' : 'secondaryButton'}
+            type="button"
+            onClick={() => onSelectIdea(idea.id)}
+          >
+            {selectedIdeaId === idea.id ? '正在查看' : '查看详情'}
+          </button>
         </li>
       ))}
     </ol>
+  );
+}
+
+type IdeaDetailState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; idea: IdeaResponse; assistantMessage?: string }
+  | { status: 'error'; message: string };
+
+function IdeaDetailPanel({
+  enabled,
+  ideaId,
+  onRefined,
+}: {
+  enabled: boolean;
+  ideaId: string | null;
+  onRefined: () => void;
+}) {
+  const [detailState, setDetailState] = useState<IdeaDetailState>({ status: 'idle' });
+  const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!enabled || !ideaId) {
+      setDetailState({ status: 'idle' });
+      return;
+    }
+    let active = true;
+    setDetailState({ status: 'loading' });
+    getIdea(ideaId)
+      .then((idea) => {
+        if (active) {
+          setDetailState({ status: 'ready', idea });
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setDetailState({ status: 'error', message: error instanceof Error ? error.message : '无法加载 idea 详情' });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [enabled, ideaId]);
+
+  async function handleRefine(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!ideaId || !message.trim()) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await refineIdea(ideaId, { message });
+      setDetailState({ status: 'ready', idea: response.idea, assistantMessage: response.assistant_message });
+      setMessage('');
+      onRefined();
+    } catch (error) {
+      setDetailState({ status: 'error', message: error instanceof Error ? error.message : '细化失败' });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="panel ideaDetailPanel">
+      <div className="settingsHeader">
+        <strong>idea 详情</strong>
+        <span>{detailState.status === 'ready' ? detailState.idea.status : ideaId ? '加载中' : '未选择'}</span>
+      </div>
+      <IdeaDetailBody detailState={detailState} />
+      {detailState.status === 'ready' ? (
+        <form className="refineForm" onSubmit={handleRefine}>
+          <label htmlFor="idea-refine-message">交流/微调</label>
+          <textarea
+            id="idea-refine-message"
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            maxLength={4000}
+            placeholder="例如：收窄实验范围，强调可验证指标"
+            required
+          />
+          <button type="submit" disabled={submitting}>
+            {submitting ? '正在细化...' : '提交细化'}
+          </button>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
+function IdeaDetailBody({ detailState }: { detailState: IdeaDetailState }) {
+  if (detailState.status === 'idle') {
+    return <p className="emptyState">从候选列表选择一条 idea。</p>;
+  }
+  if (detailState.status === 'loading') {
+    return <p className="emptyState">正在加载 idea 详情。</p>;
+  }
+  if (detailState.status === 'error') {
+    return <p className="formError">{detailState.message}</p>;
+  }
+
+  const { idea } = detailState;
+  return (
+    <div className="ideaDetailContent">
+      <div>
+        <h2>{idea.title}</h2>
+        <span className="scoreBadge">{formatScore(idea.score)}</span>
+      </div>
+      <DetailBlock label="动机" value={idea.rationale} />
+      <DetailBlock label="问题" value={idea.problem_statement} />
+      <DetailBlock label="假设" value={idea.hypothesis} />
+      <DetailBlock label="可行性" value={idea.extra.feasibility} />
+      {idea.source_context.related_work?.length ? (
+        <div className="detailBlock">
+          <strong>相关工作</strong>
+          <div className="relatedWork">
+            {idea.source_context.related_work.map((work) => (
+              <span key={work}>{work}</span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {detailState.assistantMessage ? <p className="assistantMessage">{detailState.assistantMessage}</p> : null}
+    </div>
+  );
+}
+
+function DetailBlock({ label, value }: { label: string; value?: string | null }) {
+  if (!value) {
+    return null;
+  }
+  return (
+    <div className="detailBlock">
+      <strong>{label}</strong>
+      <p>{value}</p>
+    </div>
   );
 }
 
