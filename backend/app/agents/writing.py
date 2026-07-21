@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.models import Artifact, ArtifactKind, Experiment, ExperimentStatus, Idea, KnowledgeItem, Paper, PaperStatus, Run
+from app.services.bibliography import assemble_bibliography, citation_key_for_knowledge_item, inject_bibliography
 from app.services.model_adapter import ModelAdapter, ModelAdapterError, ModelMessage, ModelRequest, build_model_adapter
 from app.services.model_settings import load_effective_model_settings
 from app.services.paper_figures import embed_figures_in_latex, figure_artifact_refs, persist_paper_figures
@@ -111,6 +112,7 @@ async def write_and_persist_paper(
     knowledge_items = _load_related_knowledge_items(db, idea)
     artifacts = _load_experiment_artifacts(db, experiment)
     result = await agent.write(run, idea, experiment, knowledge_items=knowledge_items, artifacts=artifacts)
+    bibliography = assemble_bibliography(knowledge_items, result.bibliography_entries)
 
     storage_client = storage or get_storage_client()
     generated_at = datetime.now(UTC)
@@ -122,7 +124,10 @@ async def write_and_persist_paper(
         abstract=result.abstract,
         status=PaperStatus.DRAFT.value,
         bibliography={
-            "entries": result.bibliography_entries,
+            "entries": [entry.as_dict() for entry in bibliography.entries],
+            "cited_keys": bibliography.cited_keys,
+            "bibtex": bibliography.bibtex,
+            "thebibliography": bibliography.thebibliography,
             "source_knowledge_item_ids": [str(item.id) for item in knowledge_items],
             "section_outline": result.section_outline,
         },
@@ -144,7 +149,8 @@ async def write_and_persist_paper(
     review_notes["figures"] = figure_artifact_refs(figure_artifacts)
     paper.review_notes = review_notes
 
-    latex_source = embed_figures_in_latex(result.latex_source, figure_artifacts)
+    latex_source = inject_bibliography(result.latex_source, bibliography)
+    latex_source = embed_figures_in_latex(latex_source, figure_artifacts)
     latex_bytes = latex_source.encode("utf-8")
     ref = _upload_latex(storage_client, paper, latex_bytes)
     paper.latex_storage_key = ref.key
@@ -289,6 +295,7 @@ def _related_work_prompt(knowledge_items: Sequence[KnowledgeItem]) -> str:
             {
                 "index": index,
                 "id": str(item.id),
+                "citation_key": citation_key_for_knowledge_item(item),
                 "title": item.title,
                 "authors": item.authors,
                 "summary": item.summary or item.abstract,
