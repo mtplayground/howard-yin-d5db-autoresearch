@@ -266,8 +266,145 @@ h1 {
   width: auto;
 }
 
-.progressPanel {
+.monitorPanel {
   min-height: 150px;
+}
+
+.runSelector {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.runSelector input {
+  border: 1px solid #b9b1a3;
+  border-radius: 6px;
+  color: #172026;
+  min-height: 42px;
+  min-width: 0;
+  padding: 9px 11px;
+}
+
+.runSelector input:focus {
+  border-color: #476153;
+  outline: 3px solid rgb(71 97 83 / 18%);
+}
+
+.runSelector button {
+  background: #183a5a;
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 700;
+  min-height: 42px;
+  padding: 9px 12px;
+}
+
+.runSnapshot,
+.experimentSnapshot {
+  display: grid;
+  gap: 12px;
+}
+
+.compactRow {
+  padding-bottom: 10px;
+}
+
+.experimentSnapshot {
+  border-top: 1px solid #ece7df;
+  padding-top: 14px;
+}
+
+.experimentSnapshot p {
+  color: #455056;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.metricGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metricGrid div {
+  background: #f4f0e8;
+  border: 1px solid #e4ded2;
+  border-radius: 6px;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px;
+}
+
+.metricGrid span {
+  color: #617078;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.metricGrid strong {
+  color: #172026;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.chartGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.chartGrid figure {
+  border: 1px solid #e1dbcf;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  padding: 8px;
+}
+
+.chartGrid img {
+  aspect-ratio: 4 / 3;
+  background: #f4f0e8;
+  border-radius: 6px;
+  object-fit: contain;
+  width: 100%;
+}
+
+.chartGrid figcaption,
+.artifactList span {
+  color: #617078;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.logBlock {
+  background: #172026;
+  border-radius: 6px;
+  color: #dbe6de;
+  font-size: 0.78rem;
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.artifactList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.artifactList span {
+  background: #e7f0f7;
+  border: 1px solid #cedee9;
+  border-radius: 999px;
+  color: #183a5a;
+  padding: 4px 8px;
 }
 
 .ideasPanel {
@@ -515,6 +652,15 @@ h1 {
   color: #455056;
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.eventList code {
+  background: #f4f0e8;
+  border-radius: 6px;
+  color: #7a2222;
+  font-size: 0.78rem;
+  padding: 6px;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 760px) {

@@ -8,6 +8,7 @@ import {
   getIdea,
   getIdeas,
   getModelSettings,
+  getRunMonitor,
   getSession,
   login,
   logout,
@@ -15,7 +16,18 @@ import {
   updateModelSettings,
 } from './api/client';
 import { useProgressEvents } from './hooks/useProgressEvents';
-import type { AppConfigResponse, HealthResponse, IdeaListResponse, IdeaResponse, IdeaSort, ModelSettingsResponse, RunResponse } from './types/api';
+import type {
+  AppConfigResponse,
+  HealthResponse,
+  IdeaListResponse,
+  IdeaResponse,
+  IdeaSort,
+  ModelSettingsResponse,
+  MonitorExperimentResponse,
+  ProgressEvent,
+  RunMonitorResponse,
+  RunResponse,
+} from './types/api';
 
 type LoadState =
   | { status: 'loading' }
@@ -28,8 +40,8 @@ export function App() {
   const [passphrase, setPassphrase] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [ideaRefreshKey, setIdeaRefreshKey] = useState(0);
-  const progressEvents = useProgressEvents(state.status === 'ready');
 
   useEffect(() => {
     let active = true;
@@ -163,11 +175,12 @@ export function App() {
               enabled={state.status === 'ready'}
               ideaId={selectedIdeaId}
               onRefined={() => setIdeaRefreshKey((value) => value + 1)}
+              onRunSelected={setSelectedRunId}
             />
           </div>
           <div className="consolePanels">
             <StatusPanel state={state} onLogout={handleLogout} />
-            <ProgressPanel status={progressEvents.status} events={progressEvents.events} />
+            <ExperimentMonitorPanel enabled={state.status === 'ready'} runId={selectedRunId} onRunIdChange={setSelectedRunId} />
             {state.status === 'ready' ? (
               <ModelSettingsPanel settings={state.modelSettings} onSaved={handleModelSettingsSaved} />
             ) : null}
@@ -376,10 +389,12 @@ function IdeaDetailPanel({
   enabled,
   ideaId,
   onRefined,
+  onRunSelected,
 }: {
   enabled: boolean;
   ideaId: string | null;
   onRefined: () => void;
+  onRunSelected: (runId: string) => void;
 }) {
   const [detailState, setDetailState] = useState<IdeaDetailState>({ status: 'idle' });
   const [message, setMessage] = useState('');
@@ -440,6 +455,7 @@ function IdeaDetailPanel({
         assistantMessage: '已确认并触发自动实验运行。',
         run: response.run,
       });
+      onRunSelected(response.run.id);
       onRefined();
     } catch (error) {
       setDetailState({ status: 'error', message: error instanceof Error ? error.message : '确认失败' });
@@ -539,28 +555,195 @@ function formatScore(score: number | null): string {
   return `${Math.round(score * 100)}%`;
 }
 
-function ProgressPanel({ status, events }: ReturnType<typeof useProgressEvents>) {
+type MonitorLoadState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; data: RunMonitorResponse }
+  | { status: 'error'; message: string };
+
+function ExperimentMonitorPanel({
+  enabled,
+  runId,
+  onRunIdChange,
+}: {
+  enabled: boolean;
+  runId: string | null;
+  onRunIdChange: (runId: string | null) => void;
+}) {
+  const [draftRunId, setDraftRunId] = useState(runId ?? '');
+  const [monitorState, setMonitorState] = useState<MonitorLoadState>({ status: 'idle' });
+  const liveEvents = useProgressEvents(enabled && Boolean(runId), runId ?? undefined);
+
+  useEffect(() => {
+    setDraftRunId(runId ?? '');
+  }, [runId]);
+
+  useEffect(() => {
+    if (!enabled || !runId) {
+      setMonitorState({ status: 'idle' });
+      return;
+    }
+    let active = true;
+    setMonitorState((current) => (current.status === 'ready' ? current : { status: 'loading' }));
+    getRunMonitor(runId)
+      .then((data) => {
+        if (active) {
+          setMonitorState({ status: 'ready', data });
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setMonitorState({ status: 'error', message: error instanceof Error ? error.message : '无法加载运行监控' });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [enabled, runId, liveEvents.events[0]?.id]);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextRunId = draftRunId.trim();
+    onRunIdChange(nextRunId || null);
+  }
+
+  const snapshotEvents = monitorState.status === 'ready' ? monitorState.data.events.map(eventFromHistory) : [];
+  const mergedEvents = mergeEvents(liveEvents.events, snapshotEvents);
+
   return (
-    <div className="panel progressPanel">
+    <div className="panel monitorPanel">
       <div className="settingsHeader">
-        <strong>实时进度</strong>
-        <span>{status === 'open' ? '已连接' : status === 'connecting' ? '连接中' : status === 'error' ? '连接异常' : '未连接'}</span>
+        <strong>实验监控</strong>
+        <span>{liveEvents.status === 'open' ? 'SSE 已连接' : liveEvents.status === 'connecting' ? '连接中' : liveEvents.status === 'error' ? '连接异常' : '未连接'}</span>
       </div>
-      {events.length === 0 ? (
-        <p className="emptyState">等待流水线进度、日志与产物更新。</p>
+      <form className="runSelector" onSubmit={handleSubmit}>
+        <input value={draftRunId} onChange={(event) => setDraftRunId(event.target.value)} placeholder="Run ID" />
+        <button type="submit">载入</button>
+      </form>
+      {monitorState.status === 'ready' ? <RunSnapshot data={monitorState.data} /> : null}
+      {monitorState.status === 'loading' ? <p className="emptyState">正在加载运行状态。</p> : null}
+      {monitorState.status === 'error' ? <p className="formError">{monitorState.message}</p> : null}
+      {mergedEvents.length === 0 ? (
+        <p className="emptyState">等待运行进度、日志与产物更新。</p>
       ) : (
         <ol className="eventList">
-          {events.map((event) => (
+          {mergedEvents.map((event) => (
             <li key={event.id}>
               <span>{event.type}</span>
               <strong>{event.stage ?? event.run_id ?? '全局'}</strong>
               <p>{event.message}</p>
+              {event.type === 'log' && event.payload.error ? <code>{String(event.payload.error)}</code> : null}
             </li>
           ))}
         </ol>
       )}
     </div>
   );
+}
+
+function RunSnapshot({ data }: { data: RunMonitorResponse }) {
+  return (
+    <div className="runSnapshot">
+      <div className="row compactRow">
+        <span>运行</span>
+        <strong>{data.run.status}</strong>
+      </div>
+      <div className="row compactRow">
+        <span>阶段</span>
+        <strong>{data.run.current_stage ?? '完成'}</strong>
+      </div>
+      {data.experiments.length === 0 ? (
+        <p className="emptyState">暂无实验记录。</p>
+      ) : (
+        data.experiments.map((experiment) => <ExperimentSnapshot key={experiment.id} experiment={experiment} />)
+      )}
+    </div>
+  );
+}
+
+function ExperimentSnapshot({ experiment }: { experiment: MonitorExperimentResponse }) {
+  const lastRun = experiment.metrics.last_run;
+  const numericResults = lastRun?.numeric_results ?? {};
+  const charts = chartEntries(experiment);
+  const logs = lastRun?.logs;
+
+  return (
+    <div className="experimentSnapshot">
+      <div className="ideaItemHeader">
+        <strong>{experiment.title}</strong>
+        <span>{experiment.status}</span>
+      </div>
+      {experiment.result_summary ? <p>{experiment.result_summary}</p> : null}
+      {Object.keys(numericResults).length ? (
+        <div className="metricGrid">
+          {Object.entries(numericResults).map(([key, value]) => (
+            <div key={key}>
+              <span>{key}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {charts.length ? (
+        <div className="chartGrid">
+          {charts.map((chart) => (
+            <figure key={chart.path}>
+              {chart.base64 ? <img src={`data:${chart.contentType};base64,${chart.base64}`} alt={chart.path} /> : null}
+              <figcaption>{chart.path}</figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : null}
+      {logs?.stdout || logs?.stderr ? (
+        <pre className="logBlock">{[logs.stdout, logs.stderr].filter(Boolean).join('\n')}</pre>
+      ) : null}
+      {experiment.artifacts.length ? (
+        <div className="artifactList">
+          {experiment.artifacts.map((artifact) => (
+            <span key={artifact.id}>{artifact.filename ?? artifact.storage_key}</span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function chartEntries(experiment: MonitorExperimentResponse) {
+  const inlineCharts =
+    experiment.metrics.last_run?.charts?.map((chart) => ({
+      path: chart.path ?? 'chart',
+      contentType: chart.content_type ?? 'application/octet-stream',
+      base64: chart.base64,
+    })) ?? [];
+  const artifactCharts = experiment.artifacts
+    .filter((artifact) => artifact.kind === 'figure')
+    .map((artifact) => ({
+      path: artifact.filename ?? artifact.storage_key,
+      contentType: artifact.content_type ?? 'application/octet-stream',
+      base64: undefined,
+    }));
+  return [...inlineCharts, ...artifactCharts].slice(0, 6);
+}
+
+function eventFromHistory(event: RunMonitorResponse['events'][number]): ProgressEvent {
+  return {
+    id: event.id,
+    type: event.event_type === 'run_failed' ? 'log' : 'progress',
+    message: event.message,
+    run_id: event.run_id,
+    stage: event.stage,
+    artifact_id: null,
+    payload: event.payload,
+    created_at: event.created_at,
+  };
+}
+
+function mergeEvents(liveEvents: ProgressEvent[], snapshotEvents: ProgressEvent[]) {
+  const byId = new Map<string, ProgressEvent>();
+  [...liveEvents, ...snapshotEvents].forEach((event) => byId.set(event.id, event));
+  return [...byId.values()]
+    .sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime())
+    .slice(0, 60);
 }
 
 function StatusPanel({ state, onLogout }: { state: LoadState; onLogout: () => void }) {

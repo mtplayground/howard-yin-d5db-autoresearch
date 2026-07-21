@@ -9,6 +9,7 @@ import type {
   IdeaResponse,
   ModelSettingsResponse,
   ModelSettingsUpdate,
+  RunMonitorResponse,
   SessionResponse,
 } from '../types/api';
 
@@ -121,4 +122,8 @@ export function refineIdea(ideaId: string, payload: IdeaRefineRequest): Promise<
 
 export function confirmIdea(ideaId: string): Promise<IdeaConfirmResponse> {
   return postJson<IdeaConfirmResponse>(`/api/ideas/${ideaId}/confirm`);
+}
+
+export function getRunMonitor(runId: string): Promise<RunMonitorResponse> {
+  return getJson<RunMonitorResponse>(`/api/runs/${runId}/monitor`);
 }
