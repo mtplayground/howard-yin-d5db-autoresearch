@@ -10,6 +10,7 @@ from app.api.auth import router as auth_router
 from app.api.discovery import router as discovery_router
 from app.api.events import router as events_router
 from app.api.ideas import router as ideas_router
+from app.api.papers import router as papers_router
 from app.api.routes import router as api_router
 from app.api.runs import router as runs_router
 from app.api.sandbox import router as sandbox_router
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(discovery_router)
     app.include_router(events_router)
     app.include_router(ideas_router)
+    app.include_router(papers_router)
     app.include_router(runs_router)
     app.include_router(sandbox_router)
     app.include_router(settings_router)
