@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import fnmatch
+import mimetypes
 import os
 import resource
 import signal
@@ -19,6 +22,8 @@ from app.models.sandbox import SandboxSubmitRequest
 MAX_CAPTURED_OUTPUT = 64_000
 MAX_FILE_COUNT = 24
 MAX_FILE_BYTES = 200_000
+MAX_CAPTURED_FILE_COUNT = 32
+MAX_CAPTURED_FILE_BYTES = 300_000
 
 
 class SandboxError(RuntimeError):
@@ -51,6 +56,7 @@ class SandboxOrchestrator:
             extra={
                 "files": payload.files,
                 "environment": payload.environment,
+                "capture_globs": payload.capture_globs,
                 "file_count": len(payload.files),
                 "recycled": False,
             },
@@ -97,7 +103,7 @@ class SandboxOrchestrator:
                 job.extra = extra
                 self._db.commit()
                 _write_files(Path(workspace), extra.get("files") or {})
-                return _run_command(
+                result = _run_command(
                     command=job.command,
                     cwd=workspace,
                     stdin=job.stdin,
@@ -105,6 +111,13 @@ class SandboxOrchestrator:
                     cpu_time_seconds=job.cpu_time_seconds,
                     environment=extra.get("environment") or {},
                 )
+                if extra.get("capture_globs"):
+                    captured_files = _capture_files(Path(workspace), extra.get("capture_globs") or [])
+                    refreshed_extra = dict(job.extra or {})
+                    refreshed_extra["captured_files"] = captured_files
+                    job.extra = refreshed_extra
+                    self._db.commit()
+                return result
         except SandboxError as exc:
             return SandboxExecutionResult(
                 status=SandboxJobStatus.FAILED.value,
@@ -209,6 +222,32 @@ def _write_files(workspace: Path, files: Mapping[str, str]) -> None:
         destination = workspace / relative_path
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(content, encoding="utf-8")
+
+
+def _capture_files(workspace: Path, patterns: list[str]) -> list[dict[str, object]]:
+    captured: list[dict[str, object]] = []
+    total_bytes = 0
+    for path in sorted(candidate for candidate in workspace.rglob("*") if candidate.is_file()):
+        relative_path = path.relative_to(workspace).as_posix()
+        if not _matches_any(relative_path, patterns):
+            continue
+        data = path.read_bytes()
+        total_bytes += len(data)
+        if len(captured) >= MAX_CAPTURED_FILE_COUNT or total_bytes > MAX_CAPTURED_FILE_BYTES:
+            raise SandboxError("captured sandbox files exceed configured limits")
+        captured.append(
+            {
+                "path": relative_path,
+                "byte_size": len(data),
+                "content_type": mimetypes.guess_type(relative_path)[0] or "application/octet-stream",
+                "base64": base64.b64encode(data).decode("ascii"),
+            }
+        )
+    return captured
+
+
+def _matches_any(relative_path: str, patterns: list[str]) -> bool:
+    return any(fnmatch.fnmatch(relative_path, pattern) for pattern in patterns)
 
 
 def _safe_relative_path(raw_path: str) -> Path:
