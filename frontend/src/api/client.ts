@@ -1,6 +1,8 @@
 import type {
   AppConfigResponse,
   HealthResponse,
+  IdeaListQuery,
+  IdeaListResponse,
   ModelSettingsResponse,
   ModelSettingsUpdate,
   SessionResponse,
@@ -92,4 +94,15 @@ export function getModelSettings(): Promise<ModelSettingsResponse> {
 
 export function updateModelSettings(payload: ModelSettingsUpdate): Promise<ModelSettingsResponse> {
   return putJson<ModelSettingsResponse>('/api/settings/model', payload);
+}
+
+export function getIdeas(query: IdeaListQuery = {}): Promise<IdeaListResponse> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== '') {
+      params.set(key, String(value));
+    }
+  }
+  const suffix = params.toString();
+  return getJson<IdeaListResponse>(suffix ? `/api/ideas?${suffix}` : '/api/ideas');
 }

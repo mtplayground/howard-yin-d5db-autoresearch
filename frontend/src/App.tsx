@@ -4,6 +4,7 @@ import {
   ApiError,
   getAppConfig,
   getHealth,
+  getIdeas,
   getModelSettings,
   getSession,
   login,
@@ -11,7 +12,7 @@ import {
   updateModelSettings,
 } from './api/client';
 import { useProgressEvents } from './hooks/useProgressEvents';
-import type { AppConfigResponse, HealthResponse, ModelSettingsResponse } from './types/api';
+import type { AppConfigResponse, HealthResponse, IdeaListResponse, IdeaSort, ModelSettingsResponse } from './types/api';
 
 type LoadState =
   | { status: 'loading' }
@@ -140,22 +141,198 @@ export function App() {
 
   return (
     <main className="shell">
-      <section className="intro">
-        <div>
+      <section className="workbench">
+        <header className="workbenchHeader">
           <p className="eyebrow">受保护控制台</p>
           <h1>研究自动化工作台</h1>
-          <p className="summary">当前会话已通过访问口令验证，后端 API 将接受同源请求。</p>
-        </div>
-        <div className="consolePanels">
-          <StatusPanel state={state} onLogout={handleLogout} />
-          <ProgressPanel status={progressEvents.status} events={progressEvents.events} />
-          {state.status === 'ready' ? (
-            <ModelSettingsPanel settings={state.modelSettings} onSaved={handleModelSettingsSaved} />
-          ) : null}
+        </header>
+        <div className="workbenchGrid">
+          <IdeasPanel enabled={state.status === 'ready'} />
+          <div className="consolePanels">
+            <StatusPanel state={state} onLogout={handleLogout} />
+            <ProgressPanel status={progressEvents.status} events={progressEvents.events} />
+            {state.status === 'ready' ? (
+              <ModelSettingsPanel settings={state.modelSettings} onSaved={handleModelSettingsSaved} />
+            ) : null}
+          </div>
         </div>
       </section>
     </main>
   );
+}
+
+type IdeaFilters = {
+  topic: string;
+  status: string;
+  minScore: string;
+  sort: IdeaSort;
+};
+
+type IdeaLoadState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; data: IdeaListResponse }
+  | { status: 'error'; message: string };
+
+const defaultIdeaFilters: IdeaFilters = {
+  topic: '',
+  status: 'candidate',
+  minScore: 'any',
+  sort: 'score_desc',
+};
+
+function IdeasPanel({ enabled }: { enabled: boolean }) {
+  const [draftFilters, setDraftFilters] = useState<IdeaFilters>(defaultIdeaFilters);
+  const [filters, setFilters] = useState<IdeaFilters>(defaultIdeaFilters);
+  const [ideasState, setIdeasState] = useState<IdeaLoadState>({ status: 'idle' });
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    let active = true;
+    setIdeasState({ status: 'loading' });
+    getIdeas({
+      topic: filters.topic.trim() || undefined,
+      status: filters.status === 'all' ? undefined : filters.status,
+      min_score: filters.minScore === 'any' ? undefined : Number(filters.minScore),
+      sort: filters.sort,
+      limit: 50,
+    })
+      .then((data) => {
+        if (active) {
+          setIdeasState({ status: 'ready', data });
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setIdeasState({ status: 'error', message: error instanceof Error ? error.message : '无法加载 idea 列表' });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [enabled, filters]);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFilters(draftFilters);
+  }
+
+  return (
+    <section className="panel ideasPanel">
+      <div className="settingsHeader">
+        <strong>候选 idea</strong>
+        <span>{ideasState.status === 'ready' ? `${ideasState.data.total} 条` : ideasState.status === 'loading' ? '加载中' : '待加载'}</span>
+      </div>
+      <form className="ideaFilters" onSubmit={handleSubmit}>
+        <label htmlFor="idea-topic">
+          主题
+          <input
+            id="idea-topic"
+            value={draftFilters.topic}
+            onChange={(event) => setDraftFilters({ ...draftFilters, topic: event.target.value })}
+            placeholder="检索标题、动机、相关工作"
+          />
+        </label>
+        <label htmlFor="idea-status">
+          状态
+          <select
+            id="idea-status"
+            value={draftFilters.status}
+            onChange={(event) => setDraftFilters({ ...draftFilters, status: event.target.value })}
+          >
+            <option value="candidate">候选</option>
+            <option value="draft">草稿</option>
+            <option value="approved">已确认</option>
+            <option value="rejected">已拒绝</option>
+            <option value="archived">已归档</option>
+            <option value="all">全部</option>
+          </select>
+        </label>
+        <label htmlFor="idea-min-score">
+          可行性
+          <select
+            id="idea-min-score"
+            value={draftFilters.minScore}
+            onChange={(event) => setDraftFilters({ ...draftFilters, minScore: event.target.value })}
+          >
+            <option value="any">不限</option>
+            <option value="0.8">80% 以上</option>
+            <option value="0.6">60% 以上</option>
+            <option value="0.4">40% 以上</option>
+          </select>
+        </label>
+        <label htmlFor="idea-sort">
+          排序
+          <select
+            id="idea-sort"
+            value={draftFilters.sort}
+            onChange={(event) => setDraftFilters({ ...draftFilters, sort: event.target.value as IdeaSort })}
+          >
+            <option value="score_desc">可行性高到低</option>
+            <option value="score_asc">可行性低到高</option>
+            <option value="created_desc">最新生成</option>
+            <option value="created_asc">最早生成</option>
+            <option value="title_asc">标题 A-Z</option>
+          </select>
+        </label>
+        <button type="submit">筛选</button>
+      </form>
+      <IdeaList ideasState={ideasState} />
+    </section>
+  );
+}
+
+function IdeaList({
+  ideasState,
+}: {
+  ideasState: IdeaLoadState;
+}) {
+  if (ideasState.status === 'idle' || ideasState.status === 'loading') {
+    return <p className="emptyState">正在加载候选 idea。</p>;
+  }
+
+  if (ideasState.status === 'error') {
+    return <p className="formError">{ideasState.message}</p>;
+  }
+
+  if (ideasState.data.items.length === 0) {
+    return <p className="emptyState">暂无匹配的候选 idea。</p>;
+  }
+
+  return (
+    <ol className="ideaList">
+      {ideasState.data.items.map((idea) => (
+        <li key={idea.id}>
+          <div className="ideaItemHeader">
+            <strong>{idea.title}</strong>
+            <span>{formatScore(idea.score)}</span>
+          </div>
+          <p>{idea.rationale || idea.problem_statement || '暂无动机说明'}</p>
+          <div className="ideaMeta">
+            <span>{idea.status}</span>
+            <span>{new Date(idea.created_at).toLocaleDateString()}</span>
+            {idea.extra.feasibility ? <span>{idea.extra.feasibility}</span> : null}
+          </div>
+          {idea.source_context.related_work?.length ? (
+            <div className="relatedWork">
+              {idea.source_context.related_work.slice(0, 3).map((work) => (
+                <span key={work}>{work}</span>
+              ))}
+            </div>
+          ) : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function formatScore(score: number | null): string {
+  if (score === null) {
+    return '未评分';
+  }
+  return `${Math.round(score * 100)}%`;
 }
 
 function ProgressPanel({ status, events }: ReturnType<typeof useProgressEvents>) {
