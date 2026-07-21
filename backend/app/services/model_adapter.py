@@ -6,6 +6,7 @@ from typing import Any, Literal, Protocol
 import httpx
 
 from app.services.model_settings import EffectiveModelSettings
+from app.services.retry import RetryPolicy, retry_async
 
 MessageRole = Literal["system", "user", "assistant"]
 
@@ -58,10 +59,12 @@ class OpenAICompatibleModelAdapter:
         *,
         timeout_seconds: float = 60.0,
         http_client: httpx.AsyncClient | None = None,
+        retry_policy: RetryPolicy | None = None,
     ) -> None:
         self._settings = settings
         self._timeout_seconds = timeout_seconds
         self._http_client = http_client
+        self._retry_policy = retry_policy or RetryPolicy()
 
     async def complete(self, request: ModelRequest) -> ModelResponse:
         if not request.messages:
@@ -105,13 +108,17 @@ class OpenAICompatibleModelAdapter:
             "Content-Type": "application/json",
         }
 
-        try:
+        async def post_once() -> httpx.Response:
             if self._http_client:
                 response = await self._http_client.post(url, json=payload, headers=headers)
             else:
                 async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
                     response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
+            return response
+
+        try:
+            response = await retry_async(post_once, policy=self._retry_policy, is_retryable=_is_retryable_model_exception)
             data = response.json()
         except httpx.HTTPStatusError as exc:
             raise ModelProviderError(f"model provider request failed with status {exc.response.status_code}") from exc
@@ -130,3 +137,10 @@ def build_model_adapter(settings: EffectiveModelSettings, *, timeout_seconds: fl
     if provider not in {"openai", "openai-compatible"}:
         raise ModelConfigurationError(f"unsupported model provider: {settings.provider}")
     return OpenAICompatibleModelAdapter(settings, timeout_seconds=timeout_seconds)
+
+
+def _is_retryable_model_exception(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        return status_code in {408, 409, 425, 429} or status_code >= 500
+    return isinstance(exc, httpx.HTTPError)

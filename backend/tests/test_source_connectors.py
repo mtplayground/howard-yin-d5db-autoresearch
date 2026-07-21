@@ -12,6 +12,7 @@ from app.services.source_connectors import (
     SourceSearchClient,
     build_source_connectors,
 )
+from app.services.retry import RetryPolicy
 
 
 class SourceConnectorsTest(unittest.TestCase):
@@ -152,6 +153,69 @@ class SourceConnectorsTest(unittest.TestCase):
             self.assertEqual(batch.results, [])
             self.assertEqual(batch.errors[0].source, "github")
             self.assertIn("429", batch.errors[0].message)
+
+        asyncio.run(run())
+
+    def test_retries_transient_source_errors(self) -> None:
+        async def run() -> None:
+            attempts = 0
+
+            async def handler(request: httpx.Request) -> httpx.Response:
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    return httpx.Response(503, json={"message": "temporarily unavailable"})
+                return httpx.Response(200, json={"items": []})
+
+            settings = Settings(
+                database_url="postgresql://user:pass@example/db",
+                source_connectors_enabled="github",
+                github_api_url="https://github.example",
+                source_min_interval_seconds=0,
+            )
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                connectors = build_source_connectors(
+                    settings,
+                    http_client=client,
+                    rate_limiter=AsyncRateLimiter(0),
+                    retry_policy=RetryPolicy(max_attempts=2, initial_delay_seconds=0),
+                )
+                batch = await SourceSearchClient(connectors).search_all(SourceQuery(query="retrieval"))
+
+            self.assertEqual(batch.errors, [])
+            self.assertEqual(batch.results, [])
+            self.assertEqual(attempts, 2)
+
+        asyncio.run(run())
+
+    def test_does_not_retry_non_retryable_source_status(self) -> None:
+        async def run() -> None:
+            attempts = 0
+
+            async def handler(request: httpx.Request) -> httpx.Response:
+                nonlocal attempts
+                attempts += 1
+                return httpx.Response(404, json={"message": "not found"})
+
+            settings = Settings(
+                database_url="postgresql://user:pass@example/db",
+                source_connectors_enabled="github",
+                github_api_url="https://github.example",
+                source_min_interval_seconds=0,
+            )
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                connectors = build_source_connectors(
+                    settings,
+                    http_client=client,
+                    rate_limiter=AsyncRateLimiter(0),
+                    retry_policy=RetryPolicy(max_attempts=3, initial_delay_seconds=0),
+                )
+                batch = await SourceSearchClient(connectors).search_all(SourceQuery(query="retrieval"))
+
+            self.assertEqual(batch.results, [])
+            self.assertEqual(len(batch.errors), 1)
+            self.assertIn("404", batch.errors[0].message)
+            self.assertEqual(attempts, 1)
 
         asyncio.run(run())
 

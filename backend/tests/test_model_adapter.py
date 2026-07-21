@@ -12,6 +12,7 @@ from app.services.model_adapter import (
     build_model_adapter,
 )
 from app.services.model_settings import EffectiveModelSettings
+from app.services.retry import RetryPolicy
 
 
 class ModelAdapterTest(unittest.TestCase):
@@ -59,6 +60,64 @@ class ModelAdapterTest(unittest.TestCase):
 
         with self.assertRaises(ModelConfigurationError):
             asyncio.run(adapter.complete(ModelRequest(messages=[ModelMessage(role="user", content="hello")])))
+
+    def test_retries_transient_provider_errors(self) -> None:
+        async def run() -> None:
+            attempts = 0
+
+            async def handler(request: httpx.Request) -> httpx.Response:
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    return httpx.Response(429, json={"error": "rate limited"})
+                return httpx.Response(
+                    200,
+                    json={
+                        "model": "model-a",
+                        "choices": [{"message": {"content": "recovered"}}],
+                    },
+                )
+
+            settings = EffectiveModelSettings(
+                provider="openai-compatible",
+                base_url="https://models.example/v1",
+                default_model="model-a",
+                api_key="test-key",
+            )
+            retry_policy = RetryPolicy(max_attempts=2, initial_delay_seconds=0)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                adapter = OpenAICompatibleModelAdapter(settings, http_client=client, retry_policy=retry_policy)
+                response = await adapter.complete(ModelRequest(messages=[ModelMessage(role="user", content="hello")]))
+
+            self.assertEqual(response.content, "recovered")
+            self.assertEqual(attempts, 2)
+
+        asyncio.run(run())
+
+    def test_does_not_retry_non_retryable_provider_status(self) -> None:
+        async def run() -> None:
+            attempts = 0
+
+            async def handler(request: httpx.Request) -> httpx.Response:
+                nonlocal attempts
+                attempts += 1
+                return httpx.Response(400, json={"error": "bad request"})
+
+            settings = EffectiveModelSettings(
+                provider="openai-compatible",
+                base_url="https://models.example/v1",
+                default_model="model-a",
+                api_key="test-key",
+            )
+            retry_policy = RetryPolicy(max_attempts=3, initial_delay_seconds=0)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                adapter = OpenAICompatibleModelAdapter(settings, http_client=client, retry_policy=retry_policy)
+                with self.assertRaisesRegex(Exception, "status 400"):
+                    await adapter.complete(ModelRequest(messages=[ModelMessage(role="user", content="hello")]))
+
+            self.assertEqual(attempts, 1)
+
+        asyncio.run(run())
 
     def test_rejects_unsupported_provider(self) -> None:
         settings = EffectiveModelSettings(
