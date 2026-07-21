@@ -270,6 +270,10 @@ h1 {
   min-height: 150px;
 }
 
+.paperPanel {
+  min-height: 220px;
+}
+
 .runSelector {
   display: grid;
   gap: 10px;
@@ -405,6 +409,186 @@ h1 {
   border-radius: 999px;
   color: #183a5a;
   padding: 4px 8px;
+}
+
+.paperTabs {
+  display: grid;
+  gap: 8px;
+}
+
+.paperTab,
+.activePaperTab {
+  align-items: start;
+  border: 1px solid #e1dbcf;
+  border-radius: 6px;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-height: 56px;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.paperTab {
+  background: #ffffff;
+  color: #172026;
+}
+
+.activePaperTab {
+  background: #e7f0f7;
+  border-color: #b8d0e1;
+  color: #183a5a;
+}
+
+.paperTab span,
+.activePaperTab span {
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.paperTab small,
+.activePaperTab small {
+  color: #617078;
+}
+
+.paperDetail {
+  border-top: 1px solid #ece7df;
+  display: grid;
+  gap: 14px;
+  padding-top: 14px;
+}
+
+.paperDetail p {
+  color: #455056;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.paperTitleRow {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.paperTitleRow h2 {
+  color: #172026;
+  font-size: 1.15rem;
+  letter-spacing: 0;
+  line-height: 1.22;
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.paperTitleRow span {
+  color: #617078;
+  font-size: 0.84rem;
+}
+
+.downloadButton,
+.secondaryDownload {
+  border-radius: 6px;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.downloadButton {
+  background: #183a5a;
+  color: #ffffff;
+  padding: 8px 10px;
+}
+
+.secondaryDownload {
+  background: #e6efe8;
+  color: #26382e;
+  padding: 6px 8px;
+}
+
+.paperMetaGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.paperMetaGrid div {
+  background: #f4f0e8;
+  border: 1px solid #e4ded2;
+  border-radius: 6px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px;
+}
+
+.paperMetaGrid span,
+.versionList small {
+  color: #617078;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.paperMetaGrid strong {
+  color: #172026;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.pdfPreview {
+  aspect-ratio: 4 / 5;
+  background: #f4f0e8;
+  border: 1px solid #d7d0c3;
+  border-radius: 6px;
+  min-height: 340px;
+  width: 100%;
+}
+
+.historySection {
+  display: grid;
+  gap: 10px;
+}
+
+.historySection > strong {
+  color: #172026;
+}
+
+.versionList {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.versionList li {
+  align-items: center;
+  border: 1px solid #e1dbcf;
+  border-radius: 6px;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px;
+}
+
+.versionList div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.versionList strong {
+  color: #172026;
+  overflow-wrap: anywhere;
+}
+
+.versionList div span {
+  color: #617078;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.versionList small {
+  grid-column: 1 / -1;
 }
 
 .ideasPanel {

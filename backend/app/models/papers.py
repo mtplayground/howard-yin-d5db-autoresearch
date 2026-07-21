@@ -45,6 +45,18 @@ class PaperGenerationResponse(BaseModel):
     artifacts: list[PaperArtifactResponse]
 
 
+class PaperListResponse(BaseModel):
+    items: list[PaperResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class PaperArtifactsResponse(BaseModel):
+    paper: PaperResponse
+    artifacts: list[PaperArtifactResponse]
+
+
 class PaperRevisionRequest(BaseModel):
     max_iterations: int = Field(default=3, ge=1, le=5)
     min_quality_score: float = Field(default=0.88, ge=0.0, le=1.0)

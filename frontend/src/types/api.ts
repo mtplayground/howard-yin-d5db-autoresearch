@@ -171,6 +171,47 @@ export interface IdeaConfirmResponse {
   run: RunResponse;
 }
 
+export interface PaperResponse {
+  id: string;
+  run_id: string | null;
+  idea_id: string | null;
+  experiment_id: string | null;
+  title: string;
+  abstract: string | null;
+  status: string;
+  latex_storage_key: string | null;
+  pdf_storage_key: string | null;
+  bibliography: Record<string, unknown>;
+  review_notes: Record<string, unknown>;
+  compiled_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaperArtifactResponse {
+  id: string;
+  kind: string;
+  storage_key: string;
+  filename: string | null;
+  content_type: string | null;
+  byte_size: number | null;
+  checksum_sha256: string | null;
+  extra: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface PaperListResponse {
+  items: PaperResponse[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PaperArtifactsResponse {
+  paper: PaperResponse;
+  artifacts: PaperArtifactResponse[];
+}
+
 export type ProgressEventType = 'connected' | 'progress' | 'log' | 'artifact' | 'heartbeat';
 
 export interface ProgressEvent {
