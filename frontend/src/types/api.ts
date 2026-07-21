@@ -100,6 +100,72 @@ export interface RunResponse {
   updated_at: string;
 }
 
+export interface RunEventResponse {
+  id: string;
+  run_id: string;
+  event_type: string;
+  stage: string | null;
+  message: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface MonitorArtifactResponse {
+  id: string;
+  kind: string;
+  storage_key: string;
+  filename: string | null;
+  content_type: string | null;
+  byte_size: number | null;
+  checksum_sha256: string | null;
+  extra: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface MonitorExperimentResponse {
+  id: string;
+  idea_id: string | null;
+  title: string;
+  hypothesis: string | null;
+  status: string;
+  metrics: {
+    last_run?: {
+      status?: string;
+      numeric_results?: Record<string, number>;
+      logs?: {
+        stdout?: string;
+        stderr?: string;
+      };
+      charts?: Array<{
+        path?: string;
+        byte_size?: number;
+        content_type?: string;
+        base64?: string;
+      }>;
+      persisted_artifacts?: Array<{
+        id?: string;
+        kind?: string;
+        storage_key?: string;
+        filename?: string | null;
+        content_type?: string | null;
+        byte_size?: number | null;
+      }>;
+    };
+    [key: string]: unknown;
+  };
+  result_summary: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  artifacts: MonitorArtifactResponse[];
+}
+
+export interface RunMonitorResponse {
+  run: RunResponse;
+  events: RunEventResponse[];
+  experiments: MonitorExperimentResponse[];
+}
+
 export interface IdeaConfirmResponse {
   idea: IdeaResponse;
   run: RunResponse;

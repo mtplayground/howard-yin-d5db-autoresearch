@@ -40,3 +40,39 @@ class RunEventResponse(BaseModel):
     message: str
     payload: dict[str, Any]
     created_at: datetime
+
+
+class MonitorArtifactResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    kind: str
+    storage_key: str
+    filename: str | None
+    content_type: str | None
+    byte_size: int | None
+    checksum_sha256: str | None
+    extra: dict[str, Any]
+    created_at: datetime
+
+
+class MonitorExperimentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    idea_id: uuid.UUID | None
+    title: str
+    hypothesis: str | None
+    status: str
+    metrics: dict[str, Any]
+    result_summary: str | None
+    error_message: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    artifacts: list[MonitorArtifactResponse]
+
+
+class RunMonitorResponse(BaseModel):
+    run: RunResponse
+    events: list[RunEventResponse]
+    experiments: list[MonitorExperimentResponse]
