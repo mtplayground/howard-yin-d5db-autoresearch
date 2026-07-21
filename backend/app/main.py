@@ -52,7 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router)
     app.include_router(api_router)
 
-    static_dir = Path(__file__).resolve().parents[2] / "static"
+    static_dir = Path(__file__).resolve().parents[1] / "static"
     if static_dir.exists():
         app.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")
 
