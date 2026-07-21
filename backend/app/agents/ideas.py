@@ -38,6 +38,22 @@ class IdeaGenerationResult:
     usage: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class IdeaRefinementResult:
+    title: str
+    problem_statement: str
+    hypothesis: str
+    motivation: str
+    assistant_message: str
+    related_work: list[str] = field(default_factory=list)
+    feasibility: str = ""
+    score: float | None = None
+    reusable_points: list[str] = field(default_factory=list)
+    model: str = ""
+    provider: str = ""
+    usage: dict[str, Any] = field(default_factory=dict)
+
+
 class IdeaGenerationAgent:
     def __init__(self, adapter: ModelAdapter) -> None:
         self._adapter = adapter
@@ -83,6 +99,54 @@ class IdeaGenerationAgent:
         )
 
 
+class IdeaRefinementAgent:
+    def __init__(self, adapter: ModelAdapter) -> None:
+        self._adapter = adapter
+
+    async def refine(self, idea: Idea, user_message: str) -> IdeaRefinementResult:
+        message = " ".join(user_message.split())
+        if not message:
+            raise IdeaGenerationAgentError("refinement message must not be empty")
+
+        try:
+            response = await self._adapter.complete(
+                ModelRequest(
+                    messages=[
+                        ModelMessage(
+                            role="system",
+                            content=(
+                                "You refine one candidate research idea through a concise dialogue. Return strict JSON "
+                                "only with title, problem_statement, hypothesis, motivation, assistant_message, "
+                                "related_work, feasibility, score, and reusable_points. Preserve strong existing details "
+                                "unless the user asks to change them."
+                            ),
+                        ),
+                        ModelMessage(role="user", content=_refinement_prompt(idea, message)),
+                    ],
+                    temperature=0.25,
+                    max_tokens=1400,
+                )
+            )
+        except ModelAdapterError as exc:
+            raise IdeaGenerationAgentError(str(exc)) from exc
+
+        payload = _parse_json_object(response.content)
+        return IdeaRefinementResult(
+            title=_required_text(payload.get("title"), "title", max_length=240),
+            problem_statement=_required_text(payload.get("problem_statement"), "problem_statement"),
+            hypothesis=_required_text(payload.get("hypothesis"), "hypothesis"),
+            motivation=_required_text(payload.get("motivation"), "motivation"),
+            assistant_message=_required_text(payload.get("assistant_message"), "assistant_message"),
+            related_work=_text_list(payload.get("related_work"), "related_work"),
+            feasibility=_required_text(payload.get("feasibility"), "feasibility"),
+            score=_optional_score(payload),
+            reusable_points=_text_list(payload.get("reusable_points"), "reusable_points"),
+            model=response.model,
+            provider=response.provider,
+            usage=response.usage,
+        )
+
+
 async def generate_and_persist_ideas(
     db: Session,
     knowledge_item_ids: Sequence[uuid.UUID],
@@ -116,6 +180,33 @@ async def generate_ideas_with_configured_model(
         IdeaGenerationAgent(adapter),
         max_ideas=max_ideas,
     )
+
+
+async def refine_and_update_idea(
+    db: Session,
+    idea_id: uuid.UUID,
+    user_message: str,
+    agent: IdeaRefinementAgent,
+) -> tuple[Idea, str]:
+    idea = db.get(Idea, idea_id)
+    if idea is None:
+        raise IdeaGenerationAgentError(f"Idea {idea_id} was not found")
+    result = await agent.refine(idea, user_message)
+    _apply_refinement(idea, user_message, result)
+    db.commit()
+    db.refresh(idea)
+    return idea, result.assistant_message
+
+
+async def refine_idea_with_configured_model(
+    db: Session,
+    settings: Settings,
+    idea_id: uuid.UUID,
+    user_message: str,
+) -> tuple[Idea, str]:
+    effective_settings = load_effective_model_settings(db, settings)
+    adapter = build_model_adapter(effective_settings, timeout_seconds=settings.model_request_timeout_seconds)
+    return await refine_and_update_idea(db, idea_id, user_message, IdeaRefinementAgent(adapter))
 
 
 def _load_knowledge_items(db: Session, knowledge_item_ids: Sequence[uuid.UUID]) -> list[KnowledgeItem]:
@@ -174,6 +265,38 @@ def _idea_row(
     )
 
 
+def _apply_refinement(idea: Idea, user_message: str, result: IdeaRefinementResult) -> None:
+    refined_at = datetime.now(UTC)
+    idea.title = result.title
+    idea.problem_statement = result.problem_statement
+    idea.hypothesis = result.hypothesis
+    idea.rationale = result.motivation
+    idea.score = result.score
+
+    source_context = dict(idea.source_context or {})
+    source_context["related_work"] = result.related_work
+    idea.source_context = source_context
+
+    extra = dict(idea.extra or {})
+    extra["feasibility"] = result.feasibility
+    extra["reusable_points"] = result.reusable_points
+    thread = list(extra.get("refinement_thread") or [])
+    thread.extend(
+        [
+            {"role": "user", "content": user_message, "created_at": refined_at.isoformat()},
+            {"role": "assistant", "content": result.assistant_message, "created_at": refined_at.isoformat()},
+        ]
+    )
+    extra["refinement_thread"] = thread[-40:]
+    extra["last_refinement"] = {
+        "provider": result.provider,
+        "model": result.model,
+        "usage": result.usage,
+        "refined_at": refined_at.isoformat(),
+    }
+    idea.extra = extra
+
+
 def _generation_prompt(knowledge_items: Sequence[KnowledgeItem], *, max_ideas: int) -> str:
     entries = []
     for index, item in enumerate(knowledge_items, start=1):
@@ -206,6 +329,25 @@ def _generation_prompt(knowledge_items: Sequence[KnowledgeItem], *, max_ideas: i
             ),
             "",
             "\n\n".join(entries),
+        ]
+    )
+
+
+def _refinement_prompt(idea: Idea, user_message: str) -> str:
+    return "\n".join(
+        [
+            "Current idea:",
+            f"Title: {idea.title}",
+            f"Problem statement: {idea.problem_statement or 'None'}",
+            f"Hypothesis: {idea.hypothesis or 'None'}",
+            f"Motivation: {idea.rationale or 'None'}",
+            f"Score: {idea.score if idea.score is not None else 'None'}",
+            f"Source context: {json.dumps(idea.source_context or {}, ensure_ascii=False, sort_keys=True)}",
+            f"Extra: {json.dumps(idea.extra or {}, ensure_ascii=False, sort_keys=True, default=str)}",
+            "",
+            f"User refinement request: {user_message}",
+            "",
+            "Return the updated idea and one assistant_message explaining the refinement.",
         ]
     )
 

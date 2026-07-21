@@ -4,7 +4,13 @@ import unittest
 
 from sqlalchemy import delete
 
-from app.agents.ideas import IdeaGenerationAgent, IdeaGenerationAgentError, generate_and_persist_ideas
+from app.agents.ideas import (
+    IdeaGenerationAgent,
+    IdeaGenerationAgentError,
+    IdeaRefinementAgent,
+    generate_and_persist_ideas,
+    refine_and_update_idea,
+)
 from app.db.models import Idea, IdeaStatus, KnowledgeItem
 from app.db.session import SessionLocal
 from app.services.model_adapter import ModelRequest, ModelResponse
@@ -134,6 +140,64 @@ class IdeaGenerationAgentTest(unittest.TestCase):
                 )
 
             self.assertEqual(self.db.query(Idea).count(), before_count)
+
+        asyncio.run(scenario())
+
+    def test_refines_and_updates_existing_idea(self) -> None:
+        async def scenario() -> None:
+            idea = Idea(
+                title="Initial retrieval idea",
+                problem_statement="Initial problem.",
+                hypothesis="Initial hypothesis.",
+                status=IdeaStatus.CANDIDATE.value,
+                score=0.55,
+                rationale="Initial motivation.",
+                source_context={"related_work": ["Original paper"]},
+                extra={"feasibility": "Initial feasibility.", "reusable_points": ["Initial point"]},
+            )
+            self.db.add(idea)
+            self.db.commit()
+            self.db.refresh(idea)
+            self.idea_ids.append(idea.id)
+
+            adapter = FakeModelAdapter(
+                json.dumps(
+                    {
+                        "title": "Refined retrieval idea",
+                        "problem_statement": "Sharper retrieval problem.",
+                        "hypothesis": "A refined retrieval method improves reproducibility.",
+                        "motivation": "The refined motivation targets benchmark gaps.",
+                        "assistant_message": "I narrowed the idea around reproducibility.",
+                        "related_work": ["Original paper", "New benchmark"],
+                        "feasibility": "Can be validated with existing benchmark logs.",
+                        "score": 0.76,
+                        "reusable_points": ["Reuse benchmark logs"],
+                    }
+                )
+            )
+
+            updated, assistant_message = await refine_and_update_idea(
+                self.db,
+                idea.id,
+                "Make this more reproducibility focused.",
+                IdeaRefinementAgent(adapter),
+            )
+
+            self.assertEqual(assistant_message, "I narrowed the idea around reproducibility.")
+            self.assertEqual(updated.title, "Refined retrieval idea")
+            self.assertEqual(updated.problem_statement, "Sharper retrieval problem.")
+            self.assertEqual(updated.hypothesis, "A refined retrieval method improves reproducibility.")
+            self.assertEqual(updated.rationale, "The refined motivation targets benchmark gaps.")
+            self.assertAlmostEqual(float(updated.score), 0.76)
+            self.assertEqual(updated.source_context["related_work"], ["Original paper", "New benchmark"])
+            self.assertEqual(updated.extra["feasibility"], "Can be validated with existing benchmark logs.")
+            self.assertEqual(updated.extra["reusable_points"], ["Reuse benchmark logs"])
+            self.assertEqual(updated.extra["last_refinement"]["provider"], "test-provider")
+            self.assertEqual(updated.extra["refinement_thread"][-2]["role"], "user")
+            self.assertEqual(updated.extra["refinement_thread"][-1]["content"], "I narrowed the idea around reproducibility.")
+            prompt = next(message.content for message in adapter.requests[0].messages if message.role == "user")
+            self.assertIn("Initial retrieval idea", prompt)
+            self.assertIn("Make this more reproducibility focused.", prompt)
 
         asyncio.run(scenario())
 

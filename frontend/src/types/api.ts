@@ -77,6 +77,15 @@ export interface IdeaListQuery {
   offset?: number;
 }
 
+export interface IdeaRefineRequest {
+  message: string;
+}
+
+export interface IdeaRefineResponse {
+  idea: IdeaResponse;
+  assistant_message: string;
+}
+
 export type ProgressEventType = 'connected' | 'progress' | 'log' | 'artifact' | 'heartbeat';
 
 export interface ProgressEvent {

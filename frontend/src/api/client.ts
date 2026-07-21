@@ -3,6 +3,9 @@ import type {
   HealthResponse,
   IdeaListQuery,
   IdeaListResponse,
+  IdeaRefineRequest,
+  IdeaRefineResponse,
+  IdeaResponse,
   ModelSettingsResponse,
   ModelSettingsUpdate,
   SessionResponse,
@@ -105,4 +108,12 @@ export function getIdeas(query: IdeaListQuery = {}): Promise<IdeaListResponse> {
   }
   const suffix = params.toString();
   return getJson<IdeaListResponse>(suffix ? `/api/ideas?${suffix}` : '/api/ideas');
+}
+
+export function getIdea(ideaId: string): Promise<IdeaResponse> {
+  return getJson<IdeaResponse>(`/api/ideas/${ideaId}`);
+}
+
+export function refineIdea(ideaId: string, payload: IdeaRefineRequest): Promise<IdeaRefineResponse> {
+  return postJson<IdeaRefineResponse>(`/api/ideas/${ideaId}/refine`, payload);
 }

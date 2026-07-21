@@ -31,3 +31,12 @@ class IdeaListResponse(BaseModel):
     limit: int = Field(ge=1, le=100)
     offset: int = Field(ge=0)
     sort: IdeaSort
+
+
+class IdeaRefineRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class IdeaRefineResponse(BaseModel):
+    idea: IdeaResponse
+    assistant_message: str

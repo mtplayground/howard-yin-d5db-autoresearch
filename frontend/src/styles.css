@@ -113,6 +113,11 @@ h1 {
   gap: 18px;
 }
 
+.ideaWorkspace {
+  display: grid;
+  gap: 18px;
+}
+
 .panelError {
   border-color: #b85555;
   color: #7a2222;
@@ -208,8 +213,15 @@ h1 {
   color: #ffffff;
 }
 
+.refineForm button,
+.activeIdeaButton {
+  background: #7a2e42;
+  color: #ffffff;
+}
+
 .loginForm button:disabled,
-.settingsForm button:disabled {
+.settingsForm button:disabled,
+.refineForm button:disabled {
   cursor: not-allowed;
   opacity: 0.68;
 }
@@ -260,6 +272,10 @@ h1 {
   min-height: 540px;
 }
 
+.ideaDetailPanel {
+  min-height: 360px;
+}
+
 .ideaFilters {
   align-items: end;
   display: grid;
@@ -292,6 +308,10 @@ h1 {
   display: grid;
   gap: 10px;
   padding: 16px;
+}
+
+.ideaList button {
+  justify-self: start;
 }
 
 .ideaItemHeader {
@@ -344,6 +364,88 @@ h1 {
   background: #f6ecee;
   border-color: #ead1d8;
   color: #7a2e42;
+}
+
+.ideaDetailContent {
+  display: grid;
+  gap: 14px;
+}
+
+.ideaDetailContent > div:first-child {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.ideaDetailContent h2 {
+  color: #172026;
+  font-size: 1.35rem;
+  letter-spacing: 0;
+  line-height: 1.2;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.scoreBadge {
+  background: #e7f0f7;
+  border-radius: 999px;
+  color: #183a5a;
+  flex: 0 0 auto;
+  font-size: 0.84rem;
+  font-weight: 800;
+  padding: 4px 9px;
+}
+
+.detailBlock {
+  display: grid;
+  gap: 5px;
+}
+
+.detailBlock strong {
+  color: #172026;
+  font-size: 0.9rem;
+}
+
+.detailBlock p,
+.assistantMessage {
+  color: #455056;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.assistantMessage {
+  background: #edf4ef;
+  border: 1px solid #d7e5dc;
+  border-radius: 8px;
+  color: #26382e;
+  padding: 12px;
+}
+
+.refineForm {
+  display: grid;
+  gap: 10px;
+}
+
+.refineForm label {
+  color: #455056;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.refineForm textarea {
+  border: 1px solid #b9b1a3;
+  border-radius: 6px;
+  color: #172026;
+  min-height: 108px;
+  padding: 10px 12px;
+  resize: vertical;
+  width: 100%;
+}
+
+.refineForm textarea:focus {
+  border-color: #476153;
+  outline: 3px solid rgb(71 97 83 / 18%);
 }
 
 .emptyState {

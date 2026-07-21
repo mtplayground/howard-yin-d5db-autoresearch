@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
@@ -74,6 +75,64 @@ class IdeasApiTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["detail"], "Authentication required")
+
+    def test_read_idea_detail(self) -> None:
+        idea = Idea(
+            title="Detailed idea",
+            problem_statement="Detail problem.",
+            hypothesis="Detail hypothesis.",
+            status=IdeaStatus.CANDIDATE.value,
+            score=0.64,
+            rationale="Detail motivation.",
+            source_context={"related_work": ["Paper A"]},
+            extra={"feasibility": "Practical."},
+        )
+        self.db.add(idea)
+        self.db.commit()
+        self.db.refresh(idea)
+        self.idea_ids.append(idea.id)
+
+        response = self.client.get(f"/api/ideas/{idea.id}")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["id"], str(idea.id))
+        self.assertEqual(body["title"], "Detailed idea")
+        self.assertEqual(body["source_context"]["related_work"], ["Paper A"])
+
+    def test_refine_idea_updates_detail_response(self) -> None:
+        async def fake_refine(db, settings, idea_id, user_message):  # type: ignore[no-untyped-def]
+            idea = db.get(Idea, idea_id)
+            idea.title = "Refined API idea"
+            idea.rationale = f"Refined from: {user_message}"
+            idea.extra = {"feasibility": "Updated through API.", "refinement_thread": []}
+            db.commit()
+            db.refresh(idea)
+            return idea, "Refinement applied"
+
+        idea = Idea(
+            title="API idea",
+            problem_statement="API problem.",
+            hypothesis="API hypothesis.",
+            status=IdeaStatus.CANDIDATE.value,
+            score=0.45,
+            rationale="API motivation.",
+            source_context={},
+            extra={},
+        )
+        self.db.add(idea)
+        self.db.commit()
+        self.db.refresh(idea)
+        self.idea_ids.append(idea.id)
+
+        with patch("app.api.ideas.refine_idea_with_configured_model", fake_refine):
+            response = self.client.post(f"/api/ideas/{idea.id}/refine", json={"message": "Tighten feasibility"})
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["assistant_message"], "Refinement applied")
+        self.assertEqual(body["idea"]["title"], "Refined API idea")
+        self.assertEqual(body["idea"]["rationale"], "Refined from: Tighten feasibility")
 
 
 if __name__ == "__main__":
