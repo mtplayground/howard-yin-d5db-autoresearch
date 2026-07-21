@@ -125,11 +125,17 @@ class PaperWritingAgentTest(unittest.TestCase):
             self.assertEqual(paper.review_notes["writing"]["provider"], "test-provider")
             self.assertEqual(paper.bibliography["entries"][0]["key"], "retrieval2026")
             self.assertTrue(paper.latex_storage_key.startswith("workspace/artifacts/papers/runs/"))
-            self.assertEqual(len(artifacts), 1)
-            self.assertEqual(artifacts[0].kind, ArtifactKind.LATEX.value)
-            self.assertEqual(artifacts[0].filename, "main.tex")
-            self.assertEqual(self.fake_s3.puts[0]["ContentLength"], len(self.fake_s3.puts[0]["Body"]))  # type: ignore[arg-type]
+            self.assertEqual(len(artifacts), 2)
+            latex_artifact = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.LATEX.value)
+            figure_artifact = next(artifact for artifact in artifacts if artifact.kind == ArtifactKind.FIGURE.value)
+            self.assertEqual(latex_artifact.filename, "main.tex")
+            self.assertEqual(figure_artifact.filename, "metric-summary.tex")
+            self.assertEqual(figure_artifact.extra["input_path"], "figures/metric-summary.tex")
+            self.assertTrue(all(request["ContentLength"] == len(request["Body"]) for request in self.fake_s3.puts))  # type: ignore[arg-type]
+            self.assertIn(b"accuracy", self.fake_s3.objects[("bucket", figure_artifact.storage_key)])
             self.assertIn(b"\\section{Introduction}", self.fake_s3.objects[("bucket", paper.latex_storage_key)])
+            self.assertIn(b"\\input{figures/metric-summary.tex}", self.fake_s3.objects[("bucket", paper.latex_storage_key)])
+            self.assertEqual(paper.review_notes["figures"][0]["label"], "fig:metric-summary")
 
             prompt = next(message.content for message in adapter.requests[0].messages if message.role == "user")
             self.assertIn("Retrieval Evaluation", prompt)

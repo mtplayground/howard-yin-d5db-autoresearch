@@ -16,6 +16,7 @@ from app.core.config import Settings
 from app.db.models import Artifact, ArtifactKind, Experiment, ExperimentStatus, Idea, KnowledgeItem, Paper, PaperStatus, Run
 from app.services.model_adapter import ModelAdapter, ModelAdapterError, ModelMessage, ModelRequest, build_model_adapter
 from app.services.model_settings import load_effective_model_settings
+from app.services.paper_figures import embed_figures_in_latex, figure_artifact_refs, persist_paper_figures
 from app.services.storage import ObjectStorageClient, StoredObjectRef, StorageError, get_storage_client
 
 MAX_LATEX_BYTES = 500_000
@@ -138,7 +139,13 @@ async def write_and_persist_paper(
     db.add(paper)
     db.flush()
 
-    latex_bytes = result.latex_source.encode("utf-8")
+    figure_artifacts = persist_paper_figures(db, experiment, paper, storage_client)
+    review_notes = dict(paper.review_notes or {})
+    review_notes["figures"] = figure_artifact_refs(figure_artifacts)
+    paper.review_notes = review_notes
+
+    latex_source = embed_figures_in_latex(result.latex_source, figure_artifacts)
+    latex_bytes = latex_source.encode("utf-8")
     ref = _upload_latex(storage_client, paper, latex_bytes)
     paper.latex_storage_key = ref.key
     artifact = _latex_artifact(paper, experiment, ref)
