@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PaperArtifactResponse(BaseModel):
@@ -43,3 +43,8 @@ class PaperResponse(BaseModel):
 class PaperGenerationResponse(BaseModel):
     paper: PaperResponse
     artifacts: list[PaperArtifactResponse]
+
+
+class PaperRevisionRequest(BaseModel):
+    max_iterations: int = Field(default=3, ge=1, le=5)
+    min_quality_score: float = Field(default=0.88, ge=0.0, le=1.0)
