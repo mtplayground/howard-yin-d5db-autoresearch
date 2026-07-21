@@ -82,6 +82,12 @@ class SingleAccountAuthMiddleware(BaseHTTPMiddleware):
         if self._is_public_path(path) or request.method == "OPTIONS":
             return await call_next(request)
 
+        # Let the browser load the SPA shell for root/client-side routes.
+        # The React app then calls /api/auth/session and renders the login UI
+        # when the user is not authenticated. API routes remain protected.
+        if not path.startswith("/api"):
+            return await call_next(request)
+
         if has_valid_session(request, self._settings):
             request.state.single_account_authenticated = True
             return await call_next(request)
