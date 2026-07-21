@@ -144,6 +144,71 @@ class PapersApiTest(unittest.TestCase):
         self.assertEqual(body["paper"]["pdf_storage_key"], "workspace/artifacts/papers/main.pdf")
         self.assertEqual(body["artifacts"][0]["kind"], ArtifactKind.PDF.value)
 
+    def test_revise_paper_returns_final_latex_artifact(self) -> None:
+        async def fake_revise(db, settings, paper_id, *, max_iterations, min_quality_score):  # type: ignore[no-untyped-def]
+            paper = db.get(Paper, paper_id)
+            paper.status = "draft"
+            paper.latex_storage_key = "workspace/artifacts/papers/main.final.tex"
+            paper.pdf_storage_key = None
+            paper.review_notes = {
+                "revision": {
+                    "status": "succeeded",
+                    "max_iterations": max_iterations,
+                    "min_quality_score": min_quality_score,
+                }
+            }
+            artifact = Artifact(
+                run_id=paper.run_id,
+                idea_id=paper.idea_id,
+                experiment_id=paper.experiment_id,
+                paper_id=paper.id,
+                kind=ArtifactKind.LATEX.value,
+                storage_key="workspace/artifacts/papers/main.final.tex",
+                filename="main.final.tex",
+                content_type="application/x-tex; charset=utf-8",
+                byte_size=64,
+                checksum_sha256="latex",
+                extra={"source": "paper_revision_agent"},
+            )
+            db.add(artifact)
+            db.commit()
+            db.refresh(paper)
+            self.artifact_ids.append(artifact.id)
+            return paper
+
+        run = self._create_run()
+        paper = Paper(
+            run_id=run.id,
+            idea_id=run.idea_id,
+            experiment_id=self.experiment_ids[0],
+            title="Revision API paper",
+            abstract="Abstract.",
+            status="draft",
+            latex_storage_key="workspace/artifacts/papers/main.tex",
+            bibliography={},
+            review_notes={},
+        )
+        self.db.add(paper)
+        self.db.commit()
+        self.db.refresh(paper)
+        self.paper_ids.append(paper.id)
+
+        with patch("app.api.papers.revise_paper_with_configured_model", fake_revise):
+            response = self.client.post(
+                f"/api/papers/{paper.id}/revise",
+                json={"max_iterations": 2, "min_quality_score": 0.8},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["paper"]["status"], "draft")
+        self.assertEqual(body["paper"]["latex_storage_key"], "workspace/artifacts/papers/main.final.tex")
+        self.assertIsNone(body["paper"]["pdf_storage_key"])
+        self.assertEqual(body["paper"]["review_notes"]["revision"]["max_iterations"], 2)
+        self.assertEqual(body["paper"]["review_notes"]["revision"]["min_quality_score"], 0.8)
+        self.assertEqual(body["artifacts"][0]["kind"], ArtifactKind.LATEX.value)
+        self.assertEqual(body["artifacts"][0]["filename"], "main.final.tex")
+
     def _create_run(self) -> Run:
         idea = Idea(
             title="Paper API idea",
