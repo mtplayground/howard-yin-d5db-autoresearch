@@ -12,6 +12,7 @@ from typing import Any, Literal, Protocol
 import httpx
 
 from app.core.config import Settings, get_settings
+from app.services.retry import RetryPolicy, retry_async
 
 SourceName = Literal["arxiv", "semantic_scholar", "github", "papers_with_code"]
 
@@ -103,18 +104,21 @@ class HttpSourceConnector:
         user_agent: str,
         rate_limiter: AsyncRateLimiter,
         http_client: httpx.AsyncClient | None = None,
+        retry_policy: RetryPolicy | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._user_agent = user_agent
         self._rate_limiter = rate_limiter
         self._http_client = http_client
+        self._retry_policy = retry_policy or RetryPolicy()
 
     async def _get(self, path: str, *, params: dict[str, Any], headers: dict[str, str] | None = None) -> httpx.Response:
-        await self._rate_limiter.wait(self.source)
         request_headers = {"User-Agent": self._user_agent, **(headers or {})}
         url = f"{self._base_url}/{path.lstrip('/')}" if path else self._base_url
-        try:
+
+        async def get_once() -> httpx.Response:
+            await self._rate_limiter.wait(self.source)
             if self._http_client:
                 response = await self._http_client.get(url, params=params, headers=request_headers)
             else:
@@ -122,6 +126,9 @@ class HttpSourceConnector:
                     response = await client.get(url, params=params, headers=request_headers)
             response.raise_for_status()
             return response
+
+        try:
+            return await retry_async(get_once, policy=self._retry_policy, is_retryable=_is_retryable_source_exception)
         except httpx.HTTPStatusError as exc:
             raise SourceProviderError(f"{self.source} request failed with status {exc.response.status_code}") from exc
         except httpx.HTTPError as exc:
@@ -347,6 +354,7 @@ def build_source_connectors(
     *,
     http_client: httpx.AsyncClient | None = None,
     rate_limiter: AsyncRateLimiter | None = None,
+    retry_policy: RetryPolicy | None = None,
 ) -> tuple[SourceConnector, ...]:
     resolved_settings = settings or get_settings()
     enabled = _enabled_sources(resolved_settings.source_connectors_enabled)
@@ -356,6 +364,7 @@ def build_source_connectors(
         "user_agent": resolved_settings.source_user_agent,
         "rate_limiter": limiter,
         "http_client": http_client,
+        "retry_policy": retry_policy,
     }
     connectors: list[SourceConnector] = []
     if "arxiv" in enabled:
@@ -432,3 +441,10 @@ def _authors_from_papers_with_code(value: Any) -> list[str]:
         elif isinstance(author, dict) and author.get("name"):
             authors.append(str(author["name"]))
     return authors
+
+
+def _is_retryable_source_exception(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        return status_code in {408, 409, 425, 429} or status_code >= 500
+    return isinstance(exc, httpx.HTTPError)
