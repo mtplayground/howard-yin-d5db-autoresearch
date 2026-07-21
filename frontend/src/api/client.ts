@@ -1,6 +1,7 @@
 import type {
   AppConfigResponse,
   HealthResponse,
+  IdeaConfirmResponse,
   IdeaListQuery,
   IdeaListResponse,
   IdeaRefineRequest,
@@ -116,4 +117,8 @@ export function getIdea(ideaId: string): Promise<IdeaResponse> {
 
 export function refineIdea(ideaId: string, payload: IdeaRefineRequest): Promise<IdeaRefineResponse> {
   return postJson<IdeaRefineResponse>(`/api/ideas/${ideaId}/refine`, payload);
+}
+
+export function confirmIdea(ideaId: string): Promise<IdeaConfirmResponse> {
+  return postJson<IdeaConfirmResponse>(`/api/ideas/${ideaId}/confirm`);
 }

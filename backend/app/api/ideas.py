@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,9 +10,11 @@ from sqlalchemy.orm import Session
 
 from app.agents.ideas import IdeaGenerationAgentError, refine_idea_with_configured_model
 from app.core.config import Settings, get_settings
-from app.db.models import Idea
+from app.db.models import Idea, IdeaStatus
 from app.db.session import get_db_session
-from app.models.ideas import IdeaListResponse, IdeaRefineRequest, IdeaRefineResponse, IdeaResponse, IdeaSort
+from app.models.ideas import IdeaConfirmResponse, IdeaListResponse, IdeaRefineRequest, IdeaRefineResponse, IdeaResponse, IdeaSort
+from app.models.runs import RunResponse
+from app.orchestrator import PipelineExecutionError, PipelineOrchestrator
 
 router = APIRouter(prefix="/api/ideas", tags=["ideas"])
 DatabaseDependency = Annotated[Session, Depends(get_db_session)]
@@ -81,6 +84,38 @@ async def refine_idea(
         status_code = 404 if "was not found" in str(exc) else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return IdeaRefineResponse(idea=IdeaResponse.model_validate(idea), assistant_message=assistant_message)
+
+
+@router.post("/{idea_id}/confirm", response_model=IdeaConfirmResponse, status_code=201)
+async def confirm_idea(idea_id: uuid.UUID, db: DatabaseDependency) -> IdeaConfirmResponse:
+    idea = db.get(Idea, idea_id)
+    if idea is None:
+        raise HTTPException(status_code=404, detail="Idea not found")
+
+    confirmed_at = datetime.now(UTC)
+    idea.status = IdeaStatus.APPROVED.value
+    extra = dict(idea.extra or {})
+    extra["confirmed_at"] = confirmed_at.isoformat()
+    idea.extra = extra
+
+    orchestrator = PipelineOrchestrator(db)
+    try:
+        run = await orchestrator.create_run(
+            trigger_source="idea_confirmation",
+            idea_id=idea.id,
+            parameters={
+                "confirmed_at": confirmed_at.isoformat(),
+                "idea_title": idea.title,
+                "entry_stage": "experiment",
+            },
+            start_stage="experiment",
+        )
+        run = await orchestrator.run_to_completion(run.id)
+    except PipelineExecutionError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    db.refresh(idea)
+    return IdeaConfirmResponse(idea=IdeaResponse.model_validate(idea), run=RunResponse.model_validate(run))
 
 
 def _sort_order(sort: IdeaSort) -> tuple[object, ...]:
