@@ -9,6 +9,8 @@ import type {
   IdeaResponse,
   ModelSettingsResponse,
   ModelSettingsUpdate,
+  PaperArtifactsResponse,
+  PaperListResponse,
   RunMonitorResponse,
   SessionResponse,
 } from '../types/api';
@@ -126,4 +128,27 @@ export function confirmIdea(ideaId: string): Promise<IdeaConfirmResponse> {
 
 export function getRunMonitor(runId: string): Promise<RunMonitorResponse> {
   return getJson<RunMonitorResponse>(`/api/runs/${runId}/monitor`);
+}
+
+export function getPapers(query: { run_id?: string; idea_id?: string; status?: string; limit?: number; offset?: number } = {}): Promise<PaperListResponse> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null && value !== '') {
+      params.set(key, String(value));
+    }
+  }
+  const suffix = params.toString();
+  return getJson<PaperListResponse>(suffix ? `/api/papers?${suffix}` : '/api/papers');
+}
+
+export function getPaperArtifacts(paperId: string): Promise<PaperArtifactsResponse> {
+  return getJson<PaperArtifactsResponse>(`/api/papers/${paperId}/artifacts`);
+}
+
+export function paperPdfDownloadUrl(paperId: string, disposition: 'attachment' | 'inline' = 'attachment'): string {
+  return `/api/papers/${paperId}/download/pdf?disposition=${disposition}`;
+}
+
+export function paperArtifactDownloadUrl(paperId: string, artifactId: string, disposition: 'attachment' | 'inline' = 'attachment'): string {
+  return `/api/papers/${paperId}/artifacts/${artifactId}/download?disposition=${disposition}`;
 }

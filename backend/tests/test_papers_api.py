@@ -1,7 +1,9 @@
 import os
 import unittest
+from io import BytesIO
 from unittest.mock import patch
 
+from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
@@ -9,6 +11,26 @@ from app.core.config import get_settings
 from app.db.models import Artifact, ArtifactKind, Experiment, Idea, IdeaStatus, Paper, Run, RunStatus
 from app.db.session import SessionLocal
 from app.main import create_app
+from app.services.storage import ObjectStorageClient, StorageConfig
+
+
+class FakeS3Client:
+    def __init__(self) -> None:
+        self.objects: dict[tuple[str, str], bytes] = {}
+
+    def put_object(self, **request: object) -> None:
+        self.objects[(str(request["Bucket"]), str(request["Key"]))] = bytes(request["Body"])  # type: ignore[arg-type]
+
+    def get_object(self, **request: object) -> dict[str, BytesIO]:
+        key = (str(request["Bucket"]), str(request["Key"]))
+        if key not in self.objects:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return {"Body": BytesIO(self.objects[key])}
+
+    def head_object(self, **request: object) -> None:
+        key = (str(request["Bucket"]), str(request["Key"]))
+        if key not in self.objects:
+            raise ClientError({"Error": {"Code": "404"}}, "HeadObject")
 
 
 class PapersApiTest(unittest.TestCase):
@@ -21,6 +43,18 @@ class PapersApiTest(unittest.TestCase):
         self.experiment_ids: list[object] = []
         self.paper_ids: list[object] = []
         self.artifact_ids: list[object] = []
+        self.fake_s3 = FakeS3Client()
+        self.storage = ObjectStorageClient(
+            StorageConfig(
+                bucket="bucket",
+                prefix="workspace/artifacts",
+                region="auto",
+                endpoint_url="https://objects.example",
+                access_key_id="access",
+                secret_access_key="secret",
+            ),
+            s3_client=self.fake_s3,  # type: ignore[arg-type]
+        )
         self.client = TestClient(create_app())
         self.client.post("/api/auth/login", json={"passphrase": "correct-passphrase"})
 
@@ -93,6 +127,33 @@ class PapersApiTest(unittest.TestCase):
         response = self.client.get("/api/papers/00000000-0000-0000-0000-000000000000")
 
         self.assertEqual(response.status_code, 404)
+
+    def test_list_papers_filters_by_run(self) -> None:
+        run = self._create_run()
+        paper = Paper(
+            run_id=run.id,
+            idea_id=run.idea_id,
+            experiment_id=self.experiment_ids[0],
+            title="Listed paper",
+            abstract="Abstract.",
+            status="compiled",
+            latex_storage_key="workspace/artifacts/papers/main.tex",
+            pdf_storage_key="workspace/artifacts/papers/main.pdf",
+            bibliography={},
+            review_notes={},
+        )
+        self.db.add(paper)
+        self.db.commit()
+        self.db.refresh(paper)
+        self.paper_ids.append(paper.id)
+
+        response = self.client.get(f"/api/papers?run_id={run.id}")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["total"], 1)
+        self.assertEqual(body["items"][0]["id"], str(paper.id))
+        self.assertEqual(body["items"][0]["status"], "compiled")
 
     def test_compile_paper_returns_pdf_artifact(self) -> None:
         async def fake_compile(db, paper_id):  # type: ignore[no-untyped-def]
@@ -208,6 +269,95 @@ class PapersApiTest(unittest.TestCase):
         self.assertEqual(body["paper"]["review_notes"]["revision"]["min_quality_score"], 0.8)
         self.assertEqual(body["artifacts"][0]["kind"], ArtifactKind.LATEX.value)
         self.assertEqual(body["artifacts"][0]["filename"], "main.final.tex")
+
+    def test_download_current_pdf_uses_storage_and_attachment_headers(self) -> None:
+        run = self._create_run()
+        paper = Paper(
+            run_id=run.id,
+            idea_id=run.idea_id,
+            experiment_id=self.experiment_ids[0],
+            title="Download API paper",
+            abstract="Abstract.",
+            status="compiled",
+            latex_storage_key="workspace/artifacts/papers/main.tex",
+            pdf_storage_key="workspace/artifacts/papers/main.pdf",
+            bibliography={},
+            review_notes={},
+        )
+        self.db.add(paper)
+        self.db.flush()
+        artifact = Artifact(
+            run_id=paper.run_id,
+            idea_id=paper.idea_id,
+            experiment_id=paper.experiment_id,
+            paper_id=paper.id,
+            kind=ArtifactKind.PDF.value,
+            storage_key="workspace/artifacts/papers/main.pdf",
+            filename="Download API paper.pdf",
+            content_type="application/pdf",
+            byte_size=18,
+            checksum_sha256="pdf",
+            extra={"source": "latex_compile"},
+        )
+        self.db.add(artifact)
+        self.db.commit()
+        self.db.refresh(paper)
+        self.paper_ids.append(paper.id)
+        self.artifact_ids.append(artifact.id)
+        self.fake_s3.objects[("bucket", "workspace/artifacts/papers/main.pdf")] = b"%PDF-1.4\npaper\n"
+
+        with patch("app.api.papers.get_storage_client", return_value=self.storage):
+            response = self.client.get(f"/api/papers/{paper.id}/download/pdf")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"%PDF-1.4\npaper\n")
+        self.assertEqual(response.headers["content-type"], "application/pdf")
+        self.assertIn("attachment", response.headers["content-disposition"])
+        self.assertIn("Download-API-paper.pdf", response.headers["content-disposition"])
+
+    def test_download_paper_artifact_supports_inline_history_preview(self) -> None:
+        run = self._create_run()
+        paper = Paper(
+            run_id=run.id,
+            idea_id=run.idea_id,
+            experiment_id=self.experiment_ids[0],
+            title="History API paper",
+            abstract="Abstract.",
+            status="compiled",
+            latex_storage_key="workspace/artifacts/papers/main.tex",
+            pdf_storage_key="workspace/artifacts/papers/main.pdf",
+            bibliography={},
+            review_notes={},
+        )
+        self.db.add(paper)
+        self.db.flush()
+        artifact = Artifact(
+            run_id=paper.run_id,
+            idea_id=paper.idea_id,
+            experiment_id=paper.experiment_id,
+            paper_id=paper.id,
+            kind=ArtifactKind.LATEX.value,
+            storage_key="workspace/artifacts/papers/main.final.tex",
+            filename="main.final.tex",
+            content_type="application/x-tex; charset=utf-8",
+            byte_size=19,
+            checksum_sha256="tex",
+            extra={"source": "paper_revision_agent"},
+        )
+        self.db.add(artifact)
+        self.db.commit()
+        self.db.refresh(paper)
+        self.paper_ids.append(paper.id)
+        self.artifact_ids.append(artifact.id)
+        self.fake_s3.objects[("bucket", "workspace/artifacts/papers/main.final.tex")] = b"\\documentclass{article}"
+
+        with patch("app.api.papers.get_storage_client", return_value=self.storage):
+            response = self.client.get(f"/api/papers/{paper.id}/artifacts/{artifact.id}/download?disposition=inline")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"\\documentclass{article}")
+        self.assertIn("inline", response.headers["content-disposition"])
+        self.assertIn("main.final.tex", response.headers["content-disposition"])
 
     def _create_run(self) -> Run:
         idea = Idea(

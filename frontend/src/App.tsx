@@ -8,10 +8,14 @@ import {
   getIdea,
   getIdeas,
   getModelSettings,
+  getPaperArtifacts,
+  getPapers,
   getRunMonitor,
   getSession,
   login,
   logout,
+  paperArtifactDownloadUrl,
+  paperPdfDownloadUrl,
   refineIdea,
   updateModelSettings,
 } from './api/client';
@@ -24,6 +28,10 @@ import type {
   IdeaSort,
   ModelSettingsResponse,
   MonitorExperimentResponse,
+  PaperArtifactResponse,
+  PaperArtifactsResponse,
+  PaperListResponse,
+  PaperResponse,
   ProgressEvent,
   RunMonitorResponse,
   RunResponse,
@@ -181,6 +189,7 @@ export function App() {
           <div className="consolePanels">
             <StatusPanel state={state} onLogout={handleLogout} />
             <ExperimentMonitorPanel enabled={state.status === 'ready'} runId={selectedRunId} onRunIdChange={setSelectedRunId} />
+            <PaperConsolePanel enabled={state.status === 'ready'} runId={selectedRunId} />
             {state.status === 'ready' ? (
               <ModelSettingsPanel settings={state.modelSettings} onSaved={handleModelSettingsSaved} />
             ) : null}
@@ -744,6 +753,213 @@ function mergeEvents(liveEvents: ProgressEvent[], snapshotEvents: ProgressEvent[
   return [...byId.values()]
     .sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime())
     .slice(0, 60);
+}
+
+type PaperPanelState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'ready'; papers: PaperListResponse; detail: PaperArtifactsResponse | null }
+  | { status: 'error'; message: string };
+
+function PaperConsolePanel({ enabled, runId }: { enabled: boolean; runId: string | null }) {
+  const [paperIdInput, setPaperIdInput] = useState('');
+  const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
+  const [paperState, setPaperState] = useState<PaperPanelState>({ status: 'idle' });
+
+  useEffect(() => {
+    if (!enabled) {
+      setPaperState({ status: 'idle' });
+      return;
+    }
+    let active = true;
+    setPaperState({ status: 'loading' });
+    getPapers({ run_id: runId ?? undefined, limit: 20 })
+      .then(async (papers) => {
+        if (!active) {
+          return;
+        }
+        const nextSelectedId = selectedPaperId && papers.items.some((paper) => paper.id === selectedPaperId)
+          ? selectedPaperId
+          : papers.items[0]?.id ?? null;
+        setSelectedPaperId(nextSelectedId);
+        setPaperIdInput(nextSelectedId ?? '');
+        const detail = nextSelectedId ? await getPaperArtifacts(nextSelectedId) : null;
+        if (active) {
+          setPaperState({ status: 'ready', papers, detail });
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setPaperState({ status: 'error', message: error instanceof Error ? error.message : '无法加载论文记录' });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [enabled, runId]);
+
+  async function loadPaper(paperId: string) {
+    const normalizedId = paperId.trim();
+    if (!normalizedId) {
+      return;
+    }
+    setSelectedPaperId(normalizedId);
+    setPaperIdInput(normalizedId);
+    setPaperState((current) =>
+      current.status === 'ready' ? { ...current, detail: null } : { status: 'loading' },
+    );
+    try {
+      const detail = await getPaperArtifacts(normalizedId);
+      setPaperState((current) => {
+        const emptyList: PaperListResponse = { items: [], total: 0, limit: 20, offset: 0 };
+        const papers = current.status === 'ready' ? current.papers : emptyList;
+        return { status: 'ready', papers, detail };
+      });
+    } catch (error) {
+      setPaperState({ status: 'error', message: error instanceof Error ? error.message : '无法加载论文详情' });
+    }
+  }
+
+  function handleManualLoad(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void loadPaper(paperIdInput);
+  }
+
+  const detail = paperState.status === 'ready' ? paperState.detail : null;
+  const papers = paperState.status === 'ready' ? paperState.papers.items : [];
+
+  return (
+    <div className="panel paperPanel">
+      <div className="settingsHeader">
+        <strong>论文</strong>
+        <span>{paperState.status === 'ready' ? `${paperState.papers.total} 篇` : paperState.status === 'loading' ? '加载中' : '待加载'}</span>
+      </div>
+      <form className="runSelector" onSubmit={handleManualLoad}>
+        <input value={paperIdInput} onChange={(event) => setPaperIdInput(event.target.value)} placeholder="Paper ID" />
+        <button type="submit">载入</button>
+      </form>
+      {papers.length ? (
+        <div className="paperTabs">
+          {papers.map((paper) => (
+            <button
+              key={paper.id}
+              type="button"
+              className={paper.id === selectedPaperId ? 'activePaperTab' : 'paperTab'}
+              onClick={() => void loadPaper(paper.id)}
+            >
+              <span>{paper.title}</span>
+              <small>{paper.status}</small>
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {paperState.status === 'loading' ? <p className="emptyState">正在加载论文状态。</p> : null}
+      {paperState.status === 'error' ? <p className="formError">{paperState.message}</p> : null}
+      {paperState.status === 'ready' && !detail ? <p className="emptyState">暂无论文记录，或输入 Paper ID 查看历史版本。</p> : null}
+      {detail ? <PaperDetailView detail={detail} /> : null}
+    </div>
+  );
+}
+
+function PaperDetailView({ detail }: { detail: PaperArtifactsResponse }) {
+  const { paper, artifacts } = detail;
+  const pdfArtifacts = artifacts.filter((artifact) => artifact.kind === 'pdf');
+  const currentPdf = chooseCurrentPdfArtifact(paper, pdfArtifacts);
+  const latexArtifacts = artifacts.filter((artifact) => artifact.kind === 'latex');
+  const finalQualityScore = paperQualityScore(paper);
+
+  return (
+    <div className="paperDetail">
+      <div className="paperTitleRow">
+        <div>
+          <h2>{paper.title}</h2>
+          <span>{paper.status}</span>
+        </div>
+        {currentPdf ? (
+          <a className="downloadButton" href={paperPdfDownloadUrl(paper.id)} download>
+            下载 PDF
+          </a>
+        ) : null}
+      </div>
+      {paper.abstract ? <p>{paper.abstract}</p> : null}
+      <div className="paperMetaGrid">
+        <div>
+          <span>编译</span>
+          <strong>{paper.compiled_at ? new Date(paper.compiled_at).toLocaleString() : '未编译'}</strong>
+        </div>
+        <div>
+          <span>终稿评分</span>
+          <strong>{finalQualityScore ?? '未记录'}</strong>
+        </div>
+      </div>
+      {currentPdf ? (
+        <iframe className="pdfPreview" src={paperPdfDownloadUrl(paper.id, 'inline')} title={`${paper.title} PDF 预览`} />
+      ) : (
+        <p className="emptyState">暂无可预览的 PDF。</p>
+      )}
+      <div className="historySection">
+        <strong>历史版本</strong>
+        {artifacts.length === 0 ? <p className="emptyState">暂无论文产物。</p> : null}
+        <ol className="versionList">
+          {[...pdfArtifacts, ...latexArtifacts].map((artifact) => (
+            <PaperArtifactVersion key={artifact.id} paper={paper} artifact={artifact} />
+          ))}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+function PaperArtifactVersion({ paper, artifact }: { paper: PaperResponse; artifact: PaperArtifactResponse }) {
+  const isPdf = artifact.kind === 'pdf';
+  const source = typeof artifact.extra.source === 'string' ? artifact.extra.source : artifact.kind;
+  return (
+    <li>
+      <div>
+        <strong>{artifact.filename ?? artifact.storage_key}</strong>
+        <span>{source}</span>
+      </div>
+      <small>
+        {[artifact.kind.toUpperCase(), formatBytes(artifact.byte_size), new Date(artifact.created_at).toLocaleString()]
+          .filter(Boolean)
+          .join(' · ')}
+      </small>
+      <a
+        className="secondaryDownload"
+        href={paperArtifactDownloadUrl(paper.id, artifact.id, isPdf ? 'inline' : 'attachment')}
+        target={isPdf ? '_blank' : undefined}
+        rel={isPdf ? 'noreferrer' : undefined}
+      >
+        {isPdf ? '打开' : '下载'}
+      </a>
+    </li>
+  );
+}
+
+function chooseCurrentPdfArtifact(paper: PaperResponse, pdfArtifacts: PaperArtifactResponse[]) {
+  return pdfArtifacts.find((artifact) => artifact.storage_key === paper.pdf_storage_key) ?? pdfArtifacts[0] ?? null;
+}
+
+function paperQualityScore(paper: PaperResponse): string | null {
+  const revision = paper.review_notes.revision;
+  if (!revision || typeof revision !== 'object' || Array.isArray(revision)) {
+    return null;
+  }
+  const score = (revision as Record<string, unknown>).final_quality_score;
+  return typeof score === 'number' ? `${Math.round(score * 100)}%` : null;
+}
+
+function formatBytes(byteSize: number | null): string | null {
+  if (byteSize === null) {
+    return null;
+  }
+  if (byteSize < 1024) {
+    return `${byteSize} B`;
+  }
+  if (byteSize < 1024 * 1024) {
+    return `${(byteSize / 1024).toFixed(1)} KB`;
+  }
+  return `${(byteSize / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function StatusPanel({ state, onLogout }: { state: LoadState; onLogout: () => void }) {
